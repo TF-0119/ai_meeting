@@ -1,0 +1,95 @@
+{
+  "topic": "1畳で遊べる新スポーツを仕様化",
+  "precision": 6,
+  "rounds": 10,
+  "resolve_round": true,
+  "agents": [
+    {
+      "name": "A",
+      "role": "member",
+      "style": "",
+      "reveal_think": false
+    },
+    {
+      "name": "B",
+      "role": "member",
+      "style": "",
+      "reveal_think": false
+    },
+    {
+      "name": "C",
+      "role": "member",
+      "style": "",
+      "reveal_think": false
+    },
+    {
+      "name": "D",
+      "role": "member",
+      "style": "",
+      "reveal_think": false
+    }
+  ],
+  "turns": [
+    {
+      "speaker": "A",
+      "role": "member",
+      "content": "A: キャッチボールのようなシンプルなゲーム形式にすること。",
+      "meta": {}
+    },
+    {
+      "speaker": "D",
+      "role": "member",
+      "content": "D: キャッチボールの要素を取り入れつつ、小さなヌンチャクを使った追加ルール。",
+      "meta": {}
+    },
+    {
+      "speaker": "C",
+      "role": "member",
+      "content": "C: C: 小さなヌンチャクの使用は、身体能力と協調性が求められることから良いアイディア。次にルールを明確化してみましょう。",
+      "meta": {}
+    },
+    {
+      "speaker": "A",
+      "role": "member",
+      "content": "Dの提案は協調性を高めますね。ルール設定について、どう思いますか?\n\n\n指示2:",
+      "meta": {}
+    },
+    {
+      "speaker": "C",
+      "role": "member",
+      "content": "[member] C: Dの提案は協調性向上につながりますね。ルール設定は、公平かつ楽しめるものでなければいけませんよ。",
+      "meta": {}
+    },
+    {
+      "speaker": "A",
+      "role": "member",
+      "content": "[member] C: Dさんの提案は、協調性に重要な影響がありますね。ルール設定で公平かつ楽しい体験を実現するためにはどうしたら良いでしょうか？",
+      "meta": {}
+    },
+    {
+      "speaker": "C",
+      "role": "member",
+      "content": "[member] C: [member] Aさん、ルール設定には参加者の年齢層や身体能力も考慮する必要があります。最終的なスポーツ仕様を誰にでもわかりやすくして、より多くの人々に楽しんでいただけるよう工夫しましょう。",
+      "meta": {}
+    },
+    {
+      "speaker": "D",
+      "role": "member",
+      "content": "[member] D: [member] C: [member] Aさん、年齢層や身体能力に配慮したアクティビティ設計とルールの明確なガイドラインで公平性を保ちます。",
+      "meta": {}
+    },
+    {
+      "speaker": "B",
+      "role": "member",
+      "content": "[member] B: [member] B: Aさん、アクセシビリティと楽しさのバランスに応じてルール調整が必要です。次は参加者からフィードバックを得るためのプロトタイプ開発ですね。",
+      "meta": {}
+    },
+    {
+      "speaker": "C",
+      "role": "member",
+      "content": "[member] C: そう、Bさんの提案通りプロトタイピングに進むことです。次は実地テストと試合環境設計を行いましょう。",
+      "meta": {}
+    }
+  ],
+  "final": "- **合意事項**: キャッチボールの要素を取り入れたゲーム形式にすること、小さなヌンチャクを使用して協調性を高めるアイディア、年齢や身体能力を考慮したルール設定。\n\n- **残課題**: 公平かつ楽しい体験を提供する明確なルールのガイドライン、参加者からフィードバックを得るためのプロトタイピング。\n\n- **直近のアクション**: 実地テストと試合環境設計に向けて作業を進めること。"
+}

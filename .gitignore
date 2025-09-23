@@ -1,0 +1,23 @@
+# Node/Vite
+node_modules/
+dist/
+build/
+npm-debug.log*
+yarn-error.log*
+pnpm-lock.yaml
+
+# PHP/Composer
+vendor/
+composer.lock
+
+# Env/Secrets
+.env
+.env.*
+
+# IDE/OS
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Others
+*.log
