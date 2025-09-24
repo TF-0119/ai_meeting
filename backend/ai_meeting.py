@@ -1505,8 +1505,9 @@ class Meeting:
                     rec.update(fb)
                     self.logger.append_control(rec)
                     # 1) 隠しプロンプト
-                    if self.cfg.kpi_auto_prompt and fb.get("hint") and not self.cfg.kpi_auto_tune:
-                         self._ctrl_hint = fb["hint"]; self._ctrl_ttl = 1  # 次ターンだけ
+                    if self.cfg.kpi_auto_prompt and fb.get("hint"):
+                        self._ctrl_hint = fb["hint"]
+                        self._ctrl_ttl = 1  # 次ターンだけ
                     # 2) 自動チューニング
                     if self.cfg.kpi_auto_tune and "tune" in fb:
                         for key,val in fb["tune"].items():
