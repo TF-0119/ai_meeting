@@ -36,3 +36,16 @@ export async function existsResult(meetingId) {
   const res = await fetch(`/logs/${meetingId}/meeting_result.json?t=${Date.now()}`, { method: "HEAD" });
   return res.ok;
 }
+
+export async function chat(prompt, params = {}) {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, ...params })
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`chat failed: ${res.status} ${txt}`);
+  }
+  return res.json(); // { response, model }
+}

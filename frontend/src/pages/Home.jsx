@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { chat } from "../services/api";
 
 export default function Home() {
   const nav = useNavigate();
@@ -21,6 +22,20 @@ export default function Home() {
     }).toString();
     nav(`/meeting/${id}?${params}`);
   };
+
+  const [input, setInput] = useState("");
+  const [answer, setAnswer] = useState("");
+
+  async function onSend() {
+    setAnswer("...thinking...");
+    try {
+      const data = await chat(input, { temperature: 0.7 });
+      setAnswer(data.response);
+    } catch (e) {
+      setAnswer(String(e));
+    }
+  }
+
 
   return (
     <section className="card">
@@ -51,6 +66,20 @@ export default function Home() {
           <button className="btn" type="submit" disabled={!topic.trim()}>会議を開始</button>
         </div>
       </form>
+      <div style={{ padding: "1rem", marginTop: "1rem", borderTop: "1px solid #ddd" }}>
+        <h2>LLM テスト</h2>
+        <textarea
+          rows={3}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="質問を入力..."
+          style={{ width: "100%" }}
+        />
+        <br />
+        <button onClick={onSend}>送信</button>
+        <pre style={{ whiteSpace: "pre-wrap" }}>{answer}</pre>
+      </div>
+
     </section>
   );
 }
