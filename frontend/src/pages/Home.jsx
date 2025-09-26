@@ -69,7 +69,7 @@ export default function Home() {
         </div>
 
         <label className="label">
-          エージェント（空白区切り）
+          参加者名（空白区切り、例: Alice Bob Carol)
           <input className="input" value={agents} onChange={(e) => setAgents(e.target.value)} placeholder="Alice Bob Carol" />
         </label>
 

@@ -1,0 +1,2 @@
+{"ts": "2025-09-27T00:52:48", "type": "kpi_control", "metrics": {"diversity": 0.812, "decision_density": 0.0, "stall": false}, "hint": "", "tune": {"cooldown": ["inc", 0.05, 0.1, 0.35]}}
+{"ts": "2025-09-27T00:53:06", "type": "kpi_control", "metrics": {"diversity": 0.875, "decision_density": 0.0, "stall": true}, "hint": "抽象を避け、数値・手順・失敗時対策を各1行で具体化してください。", "tune": {"cooldown": ["inc", 0.05, 0.1, 0.35], "shock_mode": "exploit"}}
