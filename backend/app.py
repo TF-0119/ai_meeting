@@ -3,12 +3,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi import BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-from .settings import settings
-from .defaults import DEFAULT_AGENT_STRING
+from backend.settings import settings
+from backend.defaults import DEFAULT_AGENT_STRING
 from pathlib import Path
 from typing import Optional, Dict
 import psutil
-import httpx
+import httpx, sys, os
 import subprocess, shlex, re, time, threading
 
 app = FastAPI(title="Local LLM Gateway")
@@ -25,8 +25,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.mount("/logs", StaticFiles(directory="logs"), name="logs")
 
 @app.get("/health")
 async def health():
@@ -70,15 +68,28 @@ class StartMeetingOut(BaseModel):
 
 @app.post("/meetings", response_model=StartMeetingOut)
 def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
-    # 出力先ディレクトリを決める（未指定なら自動）
+    # ルート/ログパスを絶対パス化
+    REPO_ROOT = Path(__file__).resolve().parent.parent
+    LOGS_ROOT = REPO_ROOT / "logs"
+
     ts = time.strftime("%Y%m%d-%H%M%S")
     slug = _slugify(body.topic)
-    outdir = Path(body.outdir) if body.outdir else Path("logs") / f"{ts}_{slug}"
+    outdir = (Path(body.outdir) if body.outdir
+              else LOGS_ROOT / f"{ts}_{slug}")
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Windowsでも動くようにリストでコマンドを作る
+    # 404防止のプレースホルダーを先に作る
+    (outdir / "meeting_live.jsonl").touch()
+    (outdir / "meeting_result.json").touch()
+
+    # プロセス出力をファイルへ（デバッグ必須）
+    stdout_f = open(outdir / "backend_stdout.log", "a", encoding="utf-8")
+    stderr_f = open(outdir / "backend_stderr.log", "a", encoding="utf-8")
+
+    # “python” ではなく現在のPythonを使う（環境ズレ防止）
+    py = sys.executable
     cmd_list = [
-        "python", "backend/ai_meeting.py",
+        py, "-u", "-m", "backend.ai_meeting",
         "--topic", body.topic,
         "--precision", str(body.precision),
         "--rounds", str(body.rounds),
@@ -86,15 +97,15 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
         "--backend", body.backend,
         "--outdir", str(outdir),
     ]
-    # 表示用のコマンド（ログやデバッグに便利）
     cmd_str = " ".join(shlex.quote(c) for c in cmd_list)
 
-    # バックグラウンドで起動（レスポンスは即返す）
+    # 起動
     proc = subprocess.Popen(
         cmd_list,
-        stdout=subprocess.DEVNULL,  # ここで捨てる。必要なら outdir / "stdout.txt" にリダイレクトも可
-        stderr=subprocess.DEVNULL,
-        cwd=Path(__file__).resolve().parent.parent,  # リポジトリ直下想定
+        stdout=stdout_f,
+        stderr=stderr_f,
+        cwd=str(REPO_ROOT),
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
         creationflags=0  # Windows なら CREATE_NO_WINDOW なども可
     )
 
@@ -109,7 +120,11 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
             "backend": body.backend,
         }
 
-    return StartMeetingOut(ok=True, id=meeting_id, pid=proc.pid, outdir=str(outdir), cmd=cmd_str)
+    return StartMeetingOut(
+        ok=True, id=meeting_id, pid=proc.pid,
+        outdir=str(outdir.relative_to(LOGS_DIR.parent)) if str(outdir).startswith(str(LOGS_DIR)) else str(outdir),
+        cmd=cmd_str
+    )
 
 # 会議一覧
 @app.get("/meetings")

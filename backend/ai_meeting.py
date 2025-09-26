@@ -15,7 +15,7 @@ import psutil
 import math
 import traceback
 import random
-from backend.defaults import DEFAULT_AGENT_NAMES
+from .defaults import DEFAULT_AGENT_NAMES
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 from pathlib import Path
