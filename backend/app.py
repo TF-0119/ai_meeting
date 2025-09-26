@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
 from settings import settings
+import psutil
 
 app = FastAPI(title="Local LLM Gateway")
 
