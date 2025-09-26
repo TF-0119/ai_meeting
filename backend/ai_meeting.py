@@ -88,46 +88,15 @@ class OllamaBackend(LLMBackend):
 
 # ===== Agent & Meeting =====
 
-AgentRole = Literal["planner", "worker", "critic", "researcher", "finisher", "member"]
-
-ROLE_SYSTEMS: Dict[AgentRole, str] = {
-    "planner": """
-        あなたはプランナーです。問題を分解し、段取り・評価軸・成功条件を明確にしてください。
-        - 出力は必ず日本語で書き、箇条書きを主体としてください。
-        - 必要なら仮説と前提を明記してください。
-    """,
-    "worker": """
-        あなたは実務担当（ワーカー）です。プランナーの段取りを踏まえ、実装・具体案・数値・手順を出してください。
-        - 出力は必ず日本語で書いてください。
-        - 実務的に、複数案と比較があればなお良いです。
-    """,
-    "critic": """
-        あなたは批評担当（クリティック）です。論点の抜け、リスク、コスト、実現性をチェックし、改善案を提示してください。
-        - 出力は必ず日本語で書いてください。
-        - 否定だけでなく代替案も出してください。
-    """,
-    "finisher": """
-        あなたはまとめ役（フィニッシャー）です。議論を統合し、最終案をまとめてください。
-        - 出力は必ず日本語で書いてください。
-        - 「合意事項」「残課題」「直近のアクション」を整理してください。
-    """,
-    # 汎用メンバー（短文チャット前提）
-    "member": """
-        あなたは会議参加者です。出力は必ず日本語、1〜2文で、直前の発言に具体的に応答してください。
-        箇条書き・見出し・長い前置きは禁止。新規性と次の一歩を重視してください。
-    """,
-}
-
 class AgentConfig(BaseModel):
     name: str
-    role: AgentRole
+    system: str
     style: str = ""  # 口調など任意
     reveal_think: bool = False  # trueだと“思考ログ”も表示（研修用）
 
 @dataclass
 class Turn:
     speaker: str
-    role: AgentRole
     content: str
     meta: Dict = field(default_factory=dict)
 
@@ -210,7 +179,7 @@ class LiveLogWriter:
         self.jsonl.touch()
         self.thoughts_log.touch()
 
-    def append_turn(self, round_idx: int, turn_idx: int, speaker: str, role: str, content: str):
+    def append_turn(self, round_idx: int, turn_idx: int, speaker: str, content: str):
         # Markdown（UI最小化＝見出しや役職を出さない）
         line = content.strip()
         # 箇条書き・見出しの残滓を軽く掃除
@@ -219,7 +188,7 @@ class LiveLogWriter:
             if self.ui_minimal:
                 f.write(f"{speaker}: {line}\n\n")
             else:
-                f.write(f"## Round {round_idx} — [{role}] {speaker}\n\n{line}\n\n")
+                f.write(f"{speaker}: {line}\n\n")
             f.flush()
         # JSONL
         record = {
@@ -228,7 +197,6 @@ class LiveLogWriter:
             "round": round_idx,
             "turn": turn_idx,
             "speaker": speaker,
-            "role": role,
             "content": content,
         }
         with self.jsonl.open("a", encoding="utf-8", newline="\n") as f:
@@ -770,9 +738,9 @@ class Meeting:
         return j
 
     def _speak_from_thought(self, agent: "AgentConfig", thought: str) -> str:
-        sys = (ROLE_SYSTEMS[agent.role] +
-               "\n※以下はあなた自身の非公開メモです。文面をそのまま出力せず、要点だけを1〜2文の発言にしてください。"
-               "\n※『メモ・思考・ヒント』などの語を出力に含めないこと。")
+        sys = (agent.system +
+               "\n※以下はあなた自身の非公開メモです。要点だけを1〜2文の発言にし、"
+               "『メモ/思考/ヒント』等の語は本文に含めないこと。")
         user = f"[自分の思考] {thought}\n\nこの要点を1〜2文の発言として述べてください。"
         req = LLMRequest(system=sys, messages=[{"role":"user","content":user}],
                          temperature=self.temperature, max_tokens=160)
@@ -780,13 +748,13 @@ class Meeting:
 
     def _agent_prompt(self, agent: AgentConfig, last_summary: str) -> LLMRequest:
         # ベースとなる役割プロンプト
-        sys_prompt = ROLE_SYSTEMS[agent.role]
+        sys_prompt = agent.system
         if not self.cfg.chat_mode:
             # 既存の“発表型”ルール
             sys_prompt += textwrap.dedent(f"""
             \n--- 会議ルール ---
 - テーマ: {self.cfg.topic}
-- あなたの役割: {agent.role.upper()} / 名前: {agent.name}
+- 名前: {agent.name}
 - 出力は必ず日本語。簡潔、箇条書き主体。過度な前置きは省略。
 - 先の発言・要約を踏まえ、話を前に進める。
 - 最後に「次に誰が何をするべきか」を1行で明示。
@@ -796,7 +764,7 @@ class Meeting:
             sys_prompt += textwrap.dedent(f"""
             \n--- 会話ルール（短文チャット）---
 - テーマ: {self.cfg.topic}
-- あなたの役割: {agent.role.upper()} / 名前: {agent.name}
+- 名前: {agent.name}
 - 出力は必ず日本語。絵文字・見出し・箇条書き・コードブロックは禁止。
 - {self.cfg.chat_max_sentences}文以内、1文{self.cfg.chat_max_chars}文字以内。冗長な前置き禁止。
 - 直前の発言に一言で応答し、具体的な次の一歩を短く示す。
@@ -806,7 +774,7 @@ class Meeting:
         if self.cfg.chat_mode:
             # 直近チャット窓だけを見せる（台本化防止）
             for t in self.history[-self.cfg.chat_window:]:
-                prior_msgs.append({"role": "user", "content": f"[{t.role}] {t.speaker}: {t.content}"})
+                prior_msgs.append({"role": "user", "content": f"{t.speaker}: {t.content}"})
         else:
             if last_summary:
                 prior_msgs.append({"role": "user", "content": f"前ラウンド要約:\n{last_summary}"})
@@ -888,7 +856,7 @@ class Meeting:
     def run(self):
         banner("AI Meeting Start")
         print(f"Topic: {self.cfg.topic}")
-        print(f"Agents: {[a.name+'/'+a.role for a in self.cfg.agents]}")
+        print(f"Agents: {[a.name for a in self.cfg.agents]}")
         print(f"Precision: {self.cfg.precision} (Temp={self.temperature:.2f}, CritiquePasses={self.critique_passes})")
         print(f"Rounds: {self.cfg.rounds}")
         print()
@@ -918,9 +886,10 @@ class Meeting:
                     self.logger.append_thoughts({"round": r, "turn": len(self.history)+1,
                                                  "thoughts": thoughts, "verdict": verdict, "winner": winner.name})
                 # 5) ログへ
-                self.history.append(Turn(role=winner.role, speaker=winner.name, content=content))
-                print(f"{winner.name}: {content}\n" if self.cfg.ui_minimal else f"[{winner.role.upper()}] {winner.name}:\n{content}\n")
-                self.logger.append_turn(r, len(self.history), winner.name, winner.role, content)
+                self.history.append(Turn(speaker=winner.name, content=content))
+                print(f"{winner.name}: {content}\n" if self.cfg.ui_minimal else f"{winner.name}:\n{content}\n")
+
+                self.logger.append_turn(r, len(self.history), winner.name, content)
                 current_speaker = winner  # ← 後段のrevealチェック用
                 self._last_spoke[current_speaker.name] = global_turn # Update _last_spoke with current_speaker
             else:
@@ -930,14 +899,14 @@ class Meeting:
                 req = self._agent_prompt(speaker, last_summary)
                 content = self.backend.generate(req)
                 content = self._enforce_chat_constraints(content)
-                if self.critique_passes > 0 and speaker.role in ("planner","worker"):
+                if self.critique_passes > 0:
                     tmp = content
                     for _ in range(self.critique_passes):
                         tmp = self._critic_pass(tmp)
                     content = tmp
-                self.history.append(Turn(speaker=speaker.name, role=speaker.role, content=content))
+                self.history.append(Turn(speaker=speaker.name, content=content))
                 print(f"{speaker.name}: {content}\n")
-                self.logger.append_turn(r, len(self.history), speaker.name, speaker.role, content)
+                self.logger.append_turn(r, len(self.history), speaker.name, content)
                 current_speaker = speaker
                 self._last_spoke[current_speaker.name] = global_turn # Update _last_spoke with current_speaker
 
@@ -1063,27 +1032,29 @@ class Meeting:
             for agent in order:
                 # 残課題を解消する指示を追加
                 extra = f"\n\n【残課題（要解消）】\n{pending_text}\n\n" \
-                        f"あなたの役割に沿って、上記の残課題を具体的に解消してください。必ず日本語で、実行可能な手順・責任分担・期限を含めてください。"
+                        f"あなたの視点で、上記の残課題を具体的に解消してください。必ず日本語で、実行可能な手順・責任分担・期限を含めてください。"
                 req = self._agent_prompt(agent, last_summary)  # 直前の要約も参照
                 req.messages.append({"role": "user", "content": extra})
                 content = self.backend.generate(req)
                 content = self._enforce_chat_constraints(content)
                 # クリティカルな役割で軽く自省
-                if self.critique_passes > 0 and agent.role in ("planner","worker","critic"):
+                if self.critique_passes > 0:
                     content = self._critic_pass(content)
-                self.history.append(Turn(speaker=agent.name, role=agent.role, content=content))
-                print(f"[{agent.role.upper()}] {agent.name}:\n{content}\n")
-                self.logger.append_turn(self.cfg.rounds+1, len(self.history), agent.name, agent.role, content)
+                self.history.append(Turn(speaker=agent.name, content=content))
+                print(f"{agent.name}:\n{content}\n")
+                self.logger.append_turn(self.cfg.rounds+1, len(self.history), agent.name, content)
                 last_summary = self._dedupe_bullets(self._summarize_round(self.history[-1]))
                 self.logger.append_summary(self.cfg.rounds+1, last_summary)
             # 解消したのでペンディングをクリア
             self._pending.clear()
 
         # 最終統合（Finisherがいない場合は内蔵フィニッシャ）
-        finisher = next((a for a in self.cfg.agents if a.role=="finisher"), None)
-        final_req_system = ROLE_SYSTEMS["finisher"]
+        final_req_system = (
+            "あなたは議論の編集者です。これまでの発言を統合し、"
+            "『合意事項』『残課題』『直近アクション』の3項目で日本語要約してください。"
+        )
         final_messages = [{"role":"user","content":"これまでの全発言:\n" + "\n\n".join(
-            [f"[{t.role}] {t.speaker}:\n{t.content}" for t in self.history]
+            [f"{t.speaker}:\n{t.content}" for t in self.history]
         )}]
         final = self.backend.generate(LLMRequest(system=final_req_system, messages=final_messages,
                                                  temperature=clamp(self.temperature,0.2,0.6), max_tokens=800))
@@ -1164,8 +1135,8 @@ def parse_args():
     ap = argparse.ArgumentParser(description="CLI AI Meeting (multi-agent)")
     ap.add_argument("--topic", required=True, help="会議テーマ（日本語OK）")
     ap.add_argument("--precision", type=int, default=5, help="1=発散寄り, 10=厳密寄り")
-    ap.add_argument("--agents", nargs="+", default=["planner","worker","critic"],
-                    help="参加者の役割を順番に列挙（例: planner worker critic finisher）")
+    ap.add_argument("--agents", nargs="+", default=["Alice","Bob","Carol"],
+                    help="参加者を列挙。'名前=systemプロンプト' 形式もOK（例: Alice='仕様を詰める' Bob='実装に落とす'）")
     ap.add_argument("--rounds", type=int, default=4)
     ap.add_argument("--backend", choices=["openai","ollama"], default="ollama")
     ap.add_argument("--openai-model", default=None)
@@ -1212,22 +1183,19 @@ def parse_args():
                     help="従来の見出し・役職ラベルを表示（台本風UIに戻す）")
     return ap.parse_args()
 
-def build_agents(names: List[str]) -> List[AgentConfig]:
+def build_agents(tokens: List[str]) -> List[AgentConfig]:
     agents: List[AgentConfig] = []
-    for t in names:
+    default_system = (
+        "あなたは会議参加者です。日本語で短く発言し、直前の内容に具体的に応答し、"
+        "次の一手を提示してください。見出し/箇条書き/長い前置きは禁止"
+    )
+    for t in tokens:
         raw = t.strip()
-        key = raw.lower()
-        # 'researcher'はまだROLE_SYSTEMSにないので除外
-        known_roles = {k for k in ROLE_SYSTEMS.keys() if k != 'researcher'}
-
-        if key in known_roles:
-            # 既存の定義済みロール
-            name = raw  # 大文字/小文字はユーザー指定を尊重
-            agents.append(AgentConfig(role=key, name=name, style="", reveal_think=False))
+        if "=" in raw:
+            name,system = raw.split("=",1)
+            agents.append(AgentConfig(name=name.strip(), system=system.strip()))
         else:
-            # 未定義は汎用メンバーとして受け付け（名前はそのまま）
-            agents.append(AgentConfig(role="member", name=raw, style="", reveal_think=False))
-
+            agents.append(AgentConfig(name=raw, system=default_system))
     return agents
 
 def main():
