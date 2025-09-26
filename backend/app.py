@@ -1,12 +1,21 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import BackgroundTasks
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
-import httpx
-from settings import settings
+from .settings import settings
+from .defaults import DEFAULT_AGENT_STRING
+from pathlib import Path
+from typing import Optional, Dict
 import psutil
-from backend.defaults import DEFAULT_AGENT_STRING
+import httpx
+import subprocess, shlex, re, time, threading
 
 app = FastAPI(title="Local LLM Gateway")
+
+LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
+LOGS_DIR.mkdir(exist_ok=True)
+app.mount("/logs", StaticFiles(directory=str(LOGS_DIR)), name="logs")
 
 # ローカルのフロントエンドだけ許可（公開しない前提）
 app.add_middleware(
@@ -16,6 +25,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.mount("/logs", StaticFiles(directory="logs"), name="logs")
 
 @app.get("/health")
 async def health():
@@ -30,12 +41,6 @@ async def models():
         r = await c.get(f"{settings.OLLAMA_URL}/api/tags")
         r.raise_for_status()
         return r.json()
-
-# === 追加: 会議サブプロセス起動API =========================================
-from fastapi import BackgroundTasks
-from pathlib import Path
-import subprocess, shlex, re, time, threading
-from typing import Optional, Dict
 
 # プロセス管理用のレジストリ（メモリ保持）
 _processes_lock = threading.Lock()
