@@ -9,6 +9,10 @@ AI Meeting は、大規模言語モデル (LLM) を複数の役割に分けて�
 - **KPI 評価とフィードバック**：議論の多様性・決定密度などを自動計測し、閾値割れ時にはプロンプトを調整する仕組みを備えています。【F:backend/ai_meeting.py†L234-L261】【F:backend/ai_meeting.py†L874-L900】
 - **フロントエンド表示**：生成ログをポーリングしてタイムライン・要約・KPI を表示する React UI を提供します。【F:frontend/src/pages/Meeting.jsx†L1-L90】【F:frontend/src/pages/Result.jsx†L8-L52】
 
+> 🔰 **初心者向けガイド**
+>
+> フロントエンドの Home 画面と FastAPI の連携手順を噛み砕いて説明したメモを `docs/meeting_flow_for_beginners.md` にまとめました。フォーム送信から会議ログ表示までの流れをざっくり知りたいときに活用してください。【F:docs/meeting_flow_for_beginners.md†L1-L44】
+
 ## ディレクトリ構成
 ```text
 ai_meeting/

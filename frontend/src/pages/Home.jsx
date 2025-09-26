@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { chat } from "../services/api";
+import { startMeeting } from "../services/api";
 
 export default function Home() {
   const nav = useNavigate();
@@ -8,33 +8,44 @@ export default function Home() {
   const [precision, setPrecision] = useState(5);
   const [rounds, setRounds] = useState(4);
   const [agents, setAgents] = useState("planner worker critic");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault();
-    // 仮の会議ID（実運用はバックエンドから受け取る想定）
-    const id = String(Date.now());
-    // Meeting画面へ。queryにフォーム値を渡す（後でAPI化したら置換）
-    const params = new URLSearchParams({
-      topic,
-      precision,
-      rounds,
-      agents,
-    }).toString();
-    nav(`/meeting/${id}?${params}`);
-  };
-
-  const [input, setInput] = useState("");
-  const [answer, setAnswer] = useState("");
-
-  async function onSend() {
-    setAnswer("...thinking...");
+    if (loading) return;
+    setError("");
+    setLoading(true);
     try {
-      const data = await chat(input, { temperature: 0.7 });
-      setAnswer(data.response);
-    } catch (e) {
-      setAnswer(String(e));
+      const precisionValue = Number(precision) || 5;
+      const roundsValue = Number(rounds) || 4;
+      const payload = {
+        topic: topic.trim(),
+        precision: precisionValue,
+        rounds: roundsValue,
+        agents: agents.trim(),
+        backend: "ollama",
+      };
+      const data = await startMeeting(payload);
+      const outdir = typeof data.outdir === "string" ? data.outdir.replace(/\\/g, "/") : "";
+      const match = outdir.startsWith("logs/") ? outdir.slice(5) : outdir;
+      const meetingId = match || data.id;
+      if (!meetingId) {
+        throw new Error("会議IDの取得に失敗しました。");
+      }
+      const params = new URLSearchParams({
+        topic,
+        precision: String(precisionValue),
+        rounds: String(roundsValue),
+        agents,
+      }).toString();
+      nav(`/meeting/${meetingId}?${params}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
 
   return (
@@ -63,23 +74,12 @@ export default function Home() {
         </label>
 
         <div className="actions">
-          <button className="btn" type="submit" disabled={!topic.trim()}>会議を開始</button>
+          <button className="btn" type="submit" disabled={!topic.trim() || loading}>
+            {loading ? "起動中..." : "会議を開始"}
+          </button>
         </div>
       </form>
-      <div style={{ padding: "1rem", marginTop: "1rem", borderTop: "1px solid #ddd" }}>
-        <h2>LLM テスト</h2>
-        <textarea
-          rows={3}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="質問を入力..."
-          style={{ width: "100%" }}
-        />
-        <br />
-        <button onClick={onSend}>送信</button>
-        <pre style={{ whiteSpace: "pre-wrap" }}>{answer}</pre>
-      </div>
-
+      {error && <div className="error" style={{ color: "#d00", marginTop: "1rem" }}>{error}</div>}
     </section>
   );
 }
