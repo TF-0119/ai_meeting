@@ -19,5 +19,17 @@ composer.lock
 .DS_Store
 Thumbs.db
 
-# Others
+# Logs and Meeting Data
 *.log
+logs/
+
+# Meeting output files (if any exist outside logs/)
+meeting_live.md
+meeting_live.jsonl
+meeting_result.json
+metrics.csv
+*.png
+phases.jsonl
+thoughts.jsonl
+control.jsonl
+kpi.json
