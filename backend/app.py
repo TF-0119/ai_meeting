@@ -4,7 +4,7 @@ from fastapi import BackgroundTasks, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from backend.settings import settings
-from backend.defaults import DEFAULT_AGENT_STRING
+from backend.defaults import DEFAULT_AGENT_STRING, DEFAULT_AGENT_NAMES
 from pathlib import Path
 from typing import Optional, Dict
 import psutil
