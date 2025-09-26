@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from backend.settings import settings
@@ -88,12 +88,15 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
 
     # “python” ではなく現在のPythonを使う（環境ズレ防止）
     py = sys.executable
+    agents = shlex.split(body.agents)
+    if not agents:
+        raise HTTPException(status_code=400, detail="agents must not be empty")
     cmd_list = [
         py, "-u", "-m", "backend.ai_meeting",
         "--topic", body.topic,
         "--precision", str(body.precision),
         "--rounds", str(body.rounds),
-        "--agents", body.agents,
+        "--agents", *agents,
         "--backend", body.backend,
         "--outdir", str(outdir),
     ]
