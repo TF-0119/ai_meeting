@@ -4,7 +4,7 @@ from fastapi import BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from backend.settings import settings
-from backend.defaults import DEFAULT_AGENT_STRING
+from backend.defaults import DEFAULT_AGENT_STRING, DEFAULT_AGENT_NAMES
 from pathlib import Path
 from typing import Optional, Dict
 import psutil
@@ -88,15 +88,19 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
 
     # “python” ではなく現在のPythonを使う（環境ズレ防止）
     py = sys.executable
+    agent_tokens = shlex.split(body.agents) if body.agents.strip() else []
+    if not agent_tokens:
+        agent_tokens = list(DEFAULT_AGENT_NAMES)
+
     cmd_list = [
         py, "-u", "-m", "backend.ai_meeting",
         "--topic", body.topic,
         "--precision", str(body.precision),
         "--rounds", str(body.rounds),
-        "--agents", body.agents,
         "--backend", body.backend,
         "--outdir", str(outdir),
     ]
+    cmd_list.extend(["--agents", *agent_tokens])
     cmd_str = " ".join(shlex.quote(c) for c in cmd_list)
 
     # 起動
