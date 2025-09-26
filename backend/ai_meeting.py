@@ -5,7 +5,7 @@ import os
 import sys
 import json
 import time
-import re
+import re, typing
 import textwrap
 from typing import List, Dict, Literal, Optional, Tuple
 import threading
@@ -54,14 +54,15 @@ class OpenAIBackend(LLMBackend):
 
     def generate(self, req: LLMRequest) -> str:
         # OpenAI Chat Completions
-        messages = [{"role":"system","content":req.system}] + req.messages
+        messages: list[dict[str, str]] = [{"role":"system","content":req.system}] + req.messages
+        
         resp = self.client.chat.completions.create(
             model=self.model,
-            messages=messages,
+            messages=typing.cast(typing.Iterable[typing.Any], messages),
             temperature=req.temperature,
             max_tokens=req.max_tokens,
         )
-        return resp.choices[0].message.content.strip()
+        return (resp.choices[0].message.content or "").strip()
 
 # --- Ollama backend (local) ---
 class OllamaBackend(LLMBackend):
@@ -357,8 +358,8 @@ class MetricsLogger:
                 h = self.nv.nvmlDeviceGetHandleByIndex(0)
                 util = float(self.nv.nvmlDeviceGetUtilizationRates(h).gpu)  # %
                 mem = self.nv.nvmlDeviceGetMemoryInfo(h)
-                mem_used = round(mem.used / (1024*1024), 1)
-                mem_total = round(mem.total / (1024*1024), 1)
+                mem_used = round(int(mem.used) / (1024*1024), 1)
+                mem_total = round(int(mem.total) / (1024*1024), 1)
                 try:
                     temp = float(self.nv.nvmlDeviceGetTemperature(h, self.nv.NVML_TEMPERATURE_GPU))
                 except Exception:
@@ -412,6 +413,7 @@ class MetricsLogger:
     def _make_plots(self):
         try:
             import matplotlib.pyplot as plt
+            import numpy as np
             # CSV読み込み
             rows = []
             with self.csv_path.open("r", encoding="utf-8") as f:
@@ -420,20 +422,20 @@ class MetricsLogger:
             if not rows:
                 return
             xs = [i for i in range(len(rows))]  # 時間軸はサンプル番号で
-            cpu = [float(row["cpu_percent"]) if row["cpu_percent"] else None for row in rows]
-            ram = [float(row["ram_percent"]) if row["ram_percent"] else None for row in rows]
-            gpu_util = [float(row["gpu_util"]) if row["gpu_util"] else None for row in rows]
-            gpu_mu = [float(row["gpu_mem_used_mb"]) if row["gpu_mem_used_mb"] else None for row in rows]
-            gpu_mt = [float(row["gpu_mem_total_mb"]) if row["gpu_mem_total_mb"] else None for row in rows]
-            gpu_temp = [float(row["gpu_temp_c"]) if row["gpu_temp_c"] else None for row in rows]
-            gpu_pw = [float(row["gpu_power_w"]) if row["gpu_power_w"] else None for row in rows]
+            cpu = [float(r["cpu_percent"]) if r["cpu_percent"] else np.nan for r in rows]
+            ram = [float(r["ram_percent"]) if r["ram_percent"] else np.nan for r in rows]
+            gpu_util = [float(r["gpu_util"]) if r["gpu_util"] else np.nan for r in rows]
+            gpu_mu = [float(r["gpu_mem_used_mb"]) if r["gpu_mem_used_mb"] else np.nan for r in rows]
+            gpu_mt = [float(r["gpu_mem_total_mb"]) if r["gpu_mem_total_mb"] else np.nan for r in rows]
+            gpu_temp = [float(r["gpu_temp_c"]) if r["gpu_temp_c"] else np.nan for r in rows]
+            gpu_pw = [float(r["gpu_power_w"]) if r["gpu_power_w"] else np.nan for r in rows]
 
             # CPU & RAM
             plt.figure()
             plt.plot(xs, cpu, label="CPU %")
             plt.plot(xs, ram, label="RAM %")
             plt.xlabel("samples")
-            plt.ylabel("percent")
+            plt.ylabel("Percent (%)")
             plt.legend()
             plt.title("CPU/RAM usage")
             plt.tight_layout()
@@ -443,16 +445,16 @@ class MetricsLogger:
 
             # GPU
             plt.figure()
-            if any(v is not None for v in gpu_util):
+            if any(not np.isnan(v) for v in gpu_util):
                 plt.plot(xs, gpu_util, label="GPU %")
-            if any(v is not None for v in gpu_mu):
+            if any(not np.isnan(v) for v in gpu_mu):
                 plt.plot(xs, gpu_mu, label="VRAM used (MB)")
-            if any(v is not None for v in gpu_temp):
+            if any(not np.isnan(v) for v in gpu_temp):
                 plt.plot(xs, gpu_temp, label="Temp (°C)")
-            if any(v is not None for v in gpu_pw):
+            if any(not np.isnan(v) for v in gpu_pw):
                 plt.plot(xs, gpu_pw, label="Power (W)")
             plt.xlabel("samples")
-            plt.legend()
+            plt.legend(loc='best')
             plt.title("GPU metrics")
             plt.tight_layout()
             (self.outdir / "metrics_gpu.png").unlink(missing_ok=True)
@@ -548,7 +550,7 @@ class KPIFeedback:
         self.cfg = cfg
         self._last_hint = None
 
-    def assess(self, turns: List[Turn], unresolved_hist: List[int]) -> Dict:
+    def assess(self, turns: List[Turn], unresolved_hist: List[int]) -> Dict[str, typing.Any]:
         W = max(3, int(self.cfg.kpi_window))
         window = turns[-W:] if len(turns) >= W else turns[:]
         if len(window) < 3:
@@ -573,9 +575,11 @@ class KPIFeedback:
             stall = no_change or (non_increasing and not any(recent[i] < recent[i-1] for i in range(1, len(recent)))) is False and \
                 (len(set(recent)) == 1)
 
-        actions = {"metrics":{"diversity":round(diversity,3),
-                              "decision_density":round(decision_density,3),
-                              "stall": bool(stall)}}
+        actions: Dict[str, typing.Any] = {
+            "metrics": {
+                "diversity": round(diversity, 3),
+                "decision_density": round(decision_density, 3),
+                "stall": bool(stall)}}
         hints = []
         tune = {}
         # 規則1：多様性不足 → 新観点 + 反復抑制
@@ -719,23 +723,62 @@ class Meeting:
                          temperature=min(0.9, self.temperature+0.1), max_tokens=120)
         return self._enforce_chat_constraints(self.backend.generate(req)).strip()
 
-    def _judge_thoughts(self, bundle: Dict[str,str]) -> Dict:
-        sys = ("あなたは中立の審査員です。流れ適合・目的適合・質・新規性・実行性を0〜1で採点し、"
-               "総合scoreを算出して勝者を1名だけ選びます。出力はJSONのみ。")
-        lines = [f"{name}: {txt}" for name,txt in bundle.items()]
+    def _judge_thoughts(self, bundle: Dict[str, str]) -> Dict:
+        # エージェント名をキーにしたJSONだけを許可
+        names = list(bundle.keys())
         recent = self._recent_context(self.cfg.chat_window)
-        user = ("Topic: {topic}\n直近: {recent}\n\n候補:\n{cands}\n\nJSON形式で出力:\n"
-                "{{\"scores\":{{\"A\":{{\"flow\":0-1,\"goal\":0-1,\"quality\":0-1,\"novelty\":0-1,"
-                "\"action\":0-1,\"score\":0-1,\"rationale\":\"短文\"}}}},\"winner\":\"A\"}}"
-               ).format(topic=self.cfg.topic, recent=recent, cands="\n".join(lines))
-        req = LLMRequest(system=sys, messages=[{"role":"user","content":user}], temperature=0.2, max_tokens=400)
+        sys = ("あなたは中立の審査員です。各候補の『流れ適合/目的適合/質/新規性/実行性』を0〜1で採点し、"
+               "総合scoreを算出して勝者を1名だけ選びます。出力はJSONのみ。")
+        # 例は“実名”で示す（A/Bなどを使わない）
+        example_scores = ", ".join(
+            [f"\"{n}\":{{\"flow\":0.0,\"goal\":0.0,\"quality\":0.0,\"novelty\":0.0,\"action\":0.0,\"score\":0.0,\"rationale\":\"短文\"}}" for n in names[:2]]
+        )
+        schema = f"{{\"scores\":{{{example_scores}, ...}},\"winner\":\"{names[0]}\"}}"
+        lines = [f"{name}: {txt}" for name, txt in bundle.items()]
+        user = (
+            f"Topic: {self.cfg.topic}\n直近: {recent}\n\n候補:\n" + "\n".join(lines) +
+            "\n\nJSON形式で厳密に出力（キーは各候補の“名前”）：\n" + schema
+        )
+        req = LLMRequest(system=sys, messages=[{"role": "user", "content": user}], temperature=0.15, max_tokens=600)
         raw = self.backend.generate(req).strip()
+        j = self._try_parse_json(raw)
+        # フォールバック：最低限 score だけ用意
+        if not isinstance(j, dict):
+            j = {}
+        scores = j.get("scores")
+        if not isinstance(scores, dict):
+            scores = {}
+        # 欠損を埋める＆scoreを正規化
+        out_scores = {}
+        for n in names:
+            rec = scores.get(n, {})
+            sc = float(rec.get("score", 0.0)) if isinstance(rec, dict) else 0.0
+            out_scores[n] = {
+                "flow": float(rec.get("flow", 0.0)) if isinstance(rec, dict) else 0.0,
+                "goal": float(rec.get("goal", 0.0)) if isinstance(rec, dict) else 0.0,
+                "quality": float(rec.get("quality", 0.0)) if isinstance(rec, dict) else 0.0,
+                "novelty": float(rec.get("novelty", 0.0)) if isinstance(rec, dict) else 0.0,
+                "action": float(rec.get("action", 0.0)) if isinstance(rec, dict) else 0.0,
+                "score": max(0.0, min(1.0, sc)),
+                "rationale": (rec.get("rationale") or "" if isinstance(rec, dict) else "")[:60]
+            }
+        win = j.get("winner")
+        if win not in names:
+            win = max(out_scores.items(), key=lambda kv: kv[1]["score"])[0] if out_scores else names[0]
+        return {"scores": out_scores, "winner": win}
+
+    def _try_parse_json(self, raw: str):
+        # ```json ... ``` または テキスト中の最外郭JSON を頑丈に抽出
         try:
-            j = json.loads(raw.split("```")[-1])
+            m = re.findall(r"\{[\s\S]*\}", raw)
+            for s in reversed(m):  # 最後のブロックがJSONであることが多い
+                try:
+                    return json.loads(s)
+                except Exception:
+                    continue
+            return json.loads(raw)  # そのままJSONの可能性
         except Exception:
-            j = {"scores": {k: {"score": random.random()} for k in bundle.keys()},
-                 "winner": max(bundle.keys(), key=lambda k: random.random())}
-        return j
+            return None
 
     def _speak_from_thought(self, agent: "AgentConfig", thought: str) -> str:
         sys = (agent.system +
@@ -901,7 +944,7 @@ class Meeting:
                 content = self._enforce_chat_constraints(content)
                 if self.critique_passes > 0:
                     tmp = content
-                    for _ in range(self.critique_passes):
+                    for _ in range(int(self.critique_passes)):
                         tmp = self._critic_pass(tmp)
                     content = tmp
                 self.history.append(Turn(speaker=speaker.name, content=content))
@@ -914,27 +957,34 @@ class Meeting:
 
             # 内省スコア → 次話者決定
             if self.equilibrium_enabled:
-                scores = {}
-                for agent in self.cfg.agents:
-                    inner_prompt = f"直前の発言:\n{content}\n\nこの発言を評価してください。JSONで出力:\n{{\"relevance\":0-1,\"novelty\":0-1,\"actionability\":0-1,\"unresolved_gain\":0-1,\"comment\":\"短文\"}}"
-                    req2 = LLMRequest(system="あなたは会議参加者の発言を評価する審査員です。", messages=[{"role":"user","content":inner_prompt}], temperature=0.3, max_tokens=200)
-                    resp = self.backend.generate(req2)
-                    try:
-                        match = re.search(r'\{.*\}', resp, re.DOTALL)
-                        if match:
-                            j = json.loads(match.group(0))
-                            score = 0.25*j.get("relevance",0)+0.25*j.get("novelty",0)+0.25*j.get("actionability",0)+0.25*j.get("unresolved_gain",0)
-                        else:
-                            score = random.random()
-                    except Exception:
-                        score = random.random()
-                    scores[agent.name] = float(score)
+                # 直近文脈 + 各エージェントの system を与えて「誰が次に最も有益か」を一度で採点
+                recent = self._recent_context(self.cfg.chat_window)
+                roster = "\n".join([f"- {a.name}: {a.system[:120]}" for a in self.cfg.agents])
+                sys_eq = ("あなたはモデレーターです。直近の流れに対して、各参加者が次の1手で"
+                          "どれだけ有益な発言をできるかを0〜1で採点します。出力はJSONのみ。")
+                schema = "{ \"scores\": { \"NAME\": 0-1, ... }, \"rationale\": \"短文\" }"
+                user_eq = (f"Topic: {self.cfg.topic}\n直近: {recent}\n\n直前の発言:\n{content}\n\n"
+                           f"参加者と視点:\n{roster}\n\nJSON形式で厳密に出力:\n{schema}")
+                req2 = LLMRequest(system=sys_eq, messages=[{"role":"user","content":user_eq}], temperature=0.2, max_tokens=600)
+                raw2 = self.backend.generate(req2).strip()
+                j2 = self._try_parse_json(raw2) if hasattr(self, "_try_parse_json") else None
+                base_scores: Dict[str, float] = {}
+                if isinstance(j2, dict) and isinstance(j2.get("scores"), dict):
+                    for a in self.cfg.agents:
+                        v = j2["scores"].get(a.name)
+                        try:
+                            base_scores[a.name] = float(v)
+                        except Exception:
+                            base_scores[a.name] = 0.0
+                else:
+                    # フォールバック：全員フラット
+                    base_scores = {a.name: 0.5 for a in self.cfg.agents}
                 # --- Step3: スコアの調整（クールダウン＆重複ペナルティ） ---
                 adj: Dict[str,float] = {}
                 sim_recent_text = self._concat_recent_text(self.cfg.sim_window)
                 sim_tokens_recent = self._token_set(sim_recent_text) if sim_recent_text else set()
                 for ag in self.cfg.agents:
-                    s = scores.get(ag.name, 0.0)
+                    s = base_scores.get(ag.name, 0.0)
                     # クールダウン（直近発言者, または span 以内）
                     if ag.name in self._last_spoke:
                         ago = global_turn - self._last_spoke[ag.name]
