@@ -7,7 +7,7 @@ export default function Home() {
   const [topic, setTopic] = useState("");
   const [precision, setPrecision] = useState(5);
   const [rounds, setRounds] = useState(4);
-  const [agents, setAgents] = useState("planner worker critic");
+  const [agents, setAgents] = useState("Alice Bob Carol");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -70,7 +70,7 @@ export default function Home() {
 
         <label className="label">
           エージェント（空白区切り）
-          <input className="input" value={agents} onChange={(e) => setAgents(e.target.value)} placeholder="planner worker critic" />
+          <input className="input" value={agents} onChange={(e) => setAgents(e.target.value)} placeholder="Alice Bob Carol" />
         </label>
 
         <div className="actions">
