@@ -15,6 +15,7 @@ import psutil
 import math
 import traceback
 import random
+from backend.defaults import DEFAULT_AGENT_NAMES
 from dataclasses import dataclass, field
 from pydantic import BaseModel, Field
 from pathlib import Path
@@ -1185,7 +1186,7 @@ def parse_args():
     ap = argparse.ArgumentParser(description="CLI AI Meeting (multi-agent)")
     ap.add_argument("--topic", required=True, help="会議テーマ（日本語OK）")
     ap.add_argument("--precision", type=int, default=5, help="1=発散寄り, 10=厳密寄り")
-    ap.add_argument("--agents", nargs="+", default=["Alice","Bob","Carol"],
+    ap.add_argument("--agents", nargs="+", default=list(DEFAULT_AGENT_NAMES),
                     help="参加者を列挙。'名前=systemプロンプト' 形式もOK（例: Alice='仕様を詰める' Bob='実装に落とす'）")
     ap.add_argument("--rounds", type=int, default=4)
     ap.add_argument("--backend", choices=["openai","ollama"], default="ollama")

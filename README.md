@@ -35,6 +35,7 @@ ai_meeting/
    python backend/ai_meeting.py \
      --topic "1畳で遊べる新スポーツを仕様化" \
      --precision 6 \
+     --agents Alice Bob Carol \
      --agents Alice Bob "Carol=議事録を即時に整理する" \
      --rounds 4 \
      --backend ollama
