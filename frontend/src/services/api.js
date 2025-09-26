@@ -37,15 +37,15 @@ export async function existsResult(meetingId) {
   return res.ok;
 }
 
-export async function chat(prompt, params = {}) {
-  const res = await fetch("/api/chat", {
+export async function startMeeting(payload) {
+  const res = await fetch("/api/meetings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, ...params })
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`chat failed: ${res.status} ${txt}`);
+    throw new Error(`start meeting failed: ${res.status} ${txt}`);
   }
-  return res.json(); // { response, model }
+  return res.json();
 }
