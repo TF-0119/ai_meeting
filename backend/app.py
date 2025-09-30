@@ -7,9 +7,23 @@ from backend.settings import settings
 from backend.defaults import DEFAULT_AGENT_STRING, DEFAULT_AGENT_NAMES
 from pathlib import Path
 from typing import Optional, Dict
-import psutil
+try:
+    import psutil
+except ModuleNotFoundError:  # ランタイム依存を減らすためのフォールバック
+    psutil = None  # type: ignore[assignment]
 import httpx, sys, os
 import subprocess, shlex, re, time, threading
+
+def _pid_exists(pid: int) -> bool:
+    """psutil が無い環境でも PID 生存確認を提供する。"""
+    if psutil is not None:
+        return psutil.pid_exists(pid)
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    else:
+        return True
 
 app = FastAPI(title="Local LLM Gateway")
 
@@ -146,7 +160,7 @@ def meeting_status(mid: str):
         return {"ok": False, "error": "NOT_FOUND"}
 
     # プロセスの生存確認
-    is_alive = psutil.pid_exists(info["pid"])
+    is_alive = _pid_exists(info["pid"])
 
     # 最低限: 代表ファイルの存在で進捗を推測
     outdir = Path(info["outdir"])
