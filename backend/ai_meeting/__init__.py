@@ -1,15 +1,16 @@
-"""`backend.ai_meeting` パッケージの暫定エントリーポイント。"""
+"""`backend.ai_meeting` パッケージの公開エントリーポイント。"""
 from __future__ import annotations
 
-from ._legacy import get_main, load_legacy_module
-from .cli import main
-from .config import MeetingConfig
+from .cli import build_agents, main, parse_args
+from .config import AgentConfig, MeetingConfig, Turn
 from .meeting import Meeting
 
 __all__ = [
-    "load_legacy_module",
-    "get_main",
+    "AgentConfig",
     "MeetingConfig",
-    "main",
+    "Turn",
     "Meeting",
+    "parse_args",
+    "build_agents",
+    "main",
 ]
