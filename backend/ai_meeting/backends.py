@@ -26,9 +26,15 @@ class OllamaBackend:
     def generate(self, req: LLMRequest) -> str:
         import json  # [file:1]
 
+        messages = [{"role": "system", "content": req.system}]
+        for idx, message in enumerate(req.messages):
+            if "role" not in message:
+                raise ValueError(f"messages[{idx}] に 'role' キーが必要です: {message}")
+            messages.append(message)
+
         payload = {
             "model": self.model,
-            "messages": req.messages,
+            "messages": messages,
             "options": {"temperature": req.temperature},
             "stream": False,  # 単一JSONに固定 [file:1]
         }  # [file:1]
