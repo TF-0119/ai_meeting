@@ -31,3 +31,4 @@ phases.jsonl
 thoughts.jsonl
 control.jsonl
 kpi.json
+!docs/samples/**
