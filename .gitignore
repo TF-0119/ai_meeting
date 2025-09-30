@@ -10,6 +10,10 @@ pnpm-lock.yaml
 vendor/
 composer.lock
 
+# Python
+*.pyc
+__pycache__/
+
 # Env/Secrets
 .env
 .env.*
