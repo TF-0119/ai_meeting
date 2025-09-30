@@ -6,11 +6,7 @@ from typing import Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-
-def clamp(value: float, lower: float, upper: float) -> float:
-    """値を下限・上限で挟み込む。"""
-
-    return max(lower, min(upper, value))
+from .utils import clamp
 
 
 class AgentConfig(BaseModel):
