@@ -7,24 +7,18 @@ import json
 import time
 import re, typing
 import textwrap
-from typing import List, Dict, Literal, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 import threading
 import csv
-import argparse
 import psutil
 import math
 import traceback
 import random
-from backend.defaults import DEFAULT_AGENT_NAMES
-from dataclasses import dataclass, field
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from pathlib import Path
 from datetime import datetime
 
-# ===== Utilities =====
-
-def clamp(v, lo, hi):
-    return max(lo, min(hi, v))
+from backend.ai_meeting.config import AgentConfig, MeetingConfig, Turn, clamp
 
 def banner(title: str):
     print("\n" + "="*80)
@@ -88,73 +82,6 @@ class OllamaBackend(LLMBackend):
         data = r.json()
         return data.get("message",{}).get("content","").strip()
 
-# ===== Agent & Meeting =====
-
-class AgentConfig(BaseModel):
-    name: str
-    system: str
-    style: str = ""  # 口調など任意
-    reveal_think: bool = False  # trueだと“思考ログ”も表示（研修用）
-
-@dataclass
-class Turn:
-    speaker: str
-    content: str
-    meta: Dict = field(default_factory=dict)
-
-class MeetingConfig(BaseModel):
-    topic: str = Field(..., description="会議テーマ（1文）")
-    precision: int = Field(5, ge=1, le=10, description="精密性(1=発散, 10=厳密)")
-    rounds: int = 4
-    agents: List[AgentConfig]
-    backend_name: Literal["openai","ollama"] = "ollama"
-    openai_model: Optional[str] = None
-    ollama_model: Optional[str] = None
-    max_tokens: int = 800
-    resolve_round: bool = True  # 最後に「残課題消化ラウンド」を自動挿入
-    # --- 短文チャット（既定ON） ---
-    chat_mode: bool = True
-    chat_max_sentences: int = 2
-    chat_max_chars: int = 120
-    chat_window: int = 2  # 直近何発言を見せるか
-    # --- 以降のステップ用プレースホルダ（Step 0では未使用） ---
-    equilibrium: bool = False     # 均衡AI（メタ評価）
-    monitor: bool = False         # 監視AI（フェーズ検知）
-    shock: Literal["off","random","explore","exploit"] = "off"  # ショック注入モード
-    shock_ttl: int = 2   # ショックを維持するターン数（フェーズ確定後の有効ターン）
-    # --- Step 1: UI最小化（台本感を消す表示） ---
-    ui_minimal: bool = True       # 役職やRound見出しを出さない
-    # --- Step 3: 多様性＆独占ガード ---
-    cooldown: float = 0.10        # 直近発言者への減点（0.0-1.0）
-    cooldown_span: int = 1        # 何ターン遡ってクールダウンを適用するか
-    topk: int = 3                 # 上位Kから抽選
-    select_temp: float = 0.7      # ソフトマックス温度（小さいほど貪欲）
-    sim_window: int = 6           # 類似度の参照ターン数（直近W）
-    sim_penalty: float = 0.25     # 類似度ペナルティの係数（0.0-1.0）
-    # --- Step 4: 監視AI + フェーズ自動判定（裏方のみ） ---
-    phase_window: int = 8                 # 直近W発言でまとまり度を判定
-    phase_cohesion_min: float = 0.70      # フェーズ確定に必要な“まとまり度”下限（0-1）
-    phase_unresolved_drop: float = 0.25   # 未解決が W 内でこの割合以上減ったらOK
-    phase_loop_threshold: int = 3         # 高類似ループK回でフェーズ確定
-    # ---- Step8前: 思考→審査→発言（T3→T1）MVP ----
-    think_mode: bool = True           # 全員が非公開の「思考」を出してから発言者を決める
-    think_debug: bool = True          # thoughts.jsonl に全思考・採点を保存（本文には出さない）
-    # --- Step 7: KPIフィードバック制御 ---
-    kpi_window: int = 6                   # 直近W発言でミニKPIを算出
-    kpi_auto_prompt: bool = True          # 閾値割れで隠しプロンプトを注入
-    kpi_auto_tune: bool = True            # 閾値割れでパラメータ自動調整
-    th_diversity_min: float = 0.55        # 多様性の下限（下回ると発散要求）
-    th_decision_min: float = 0.40         # 決定密度の下限（下回ると担当/期限を強制）
-    th_progress_stall: int = 3            # 未解決がW中ずっと横ばい/悪化なら収束促進
-
-    outdir: Optional[str] = None  # ログ出力先。未指定なら自動で logs/<日時_トピック> を作成
-    def runtime_params(self):
-        # precisionに応じて温度・“ノイズ”・ファクトチェック回数を決める
-        p = self.precision
-        temperature = clamp(1.1 - (p/10)*0.8, 0.2, 1.0)  # p↑で温度↓
-        critique_passes = clamp(int(round((p/10)*2)), 0, 2)  # 0~2回
-        return dict(temperature=temperature, critique_passes=critique_passes)
-    
 class LiveLogWriter:
     def __init__(self, topic: str, outdir: Optional[str] = None, ui_minimal: bool = True):
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -1180,119 +1107,10 @@ class Meeting:
                 return name
         return pairs[0][0]  # フォールバック
 
-# ===== CLI =====
+# ===== CLI (互換目的のエイリアス) =====
 
-def parse_args():
-    ap = argparse.ArgumentParser(description="CLI AI Meeting (multi-agent)")
-    ap.add_argument("--topic", required=True, help="会議テーマ（日本語OK）")
-    ap.add_argument("--precision", type=int, default=5, help="1=発散寄り, 10=厳密寄り")
-    ap.add_argument("--agents", nargs="+", default=list(DEFAULT_AGENT_NAMES),
-                    help="参加者を列挙。'名前=systemプロンプト' 形式もOK（例: Alice='仕様を詰める' Bob='実装に落とす'）")
-    ap.add_argument("--rounds", type=int, default=4)
-    ap.add_argument("--backend", choices=["openai","ollama"], default="ollama")
-    ap.add_argument("--openai-model", default=None)
-    ap.add_argument("--ollama-model", default=None)
-    ap.add_argument("--no-resolve-round", dest="resolve_round", action="store_false",
-                    help="最後の“残課題消化ラウンド”を無効化する")
-    # 短文チャット（既定ON。OFFにしたいときだけ指定）
-    ap.add_argument("--no-chat-mode", dest="chat_mode", action="store_false",
-                    help="短文チャットモードを無効化する")
-    ap.add_argument("--chat-max-sentences", type=int, default=2)
-    ap.add_argument("--chat-max-chars", type=int, default=120)
-    ap.add_argument("--chat-window", type=int, default=2)
-    ap.add_argument("--outdir", default=None, help="ログ出力先ディレクトリ（未指定なら自動生成）")
-    # 以降のステップ用（Step 0では未使用。フラグだけ受ける）
-    ap.add_argument("--equilibrium", action="store_true", help="均衡AI（メタ評価）を有効化（Step 0では未使用）")
-    ap.add_argument("--shock", choices=["off","random","explore","exploit"], default="off",
-                    help="ショック注入モード（Step 0では未使用）")
-    ap.add_argument("--shock-ttl", type=int, default=2, help="ショック効果を維持するターン数")
-    # Step 3
-    ap.add_argument("--cooldown", type=float, default=0.10)
-    ap.add_argument("--cooldown-span", type=int, default=1)
-    ap.add_argument("--topk", type=int, default=3)
-    ap.add_argument("--select-temp", type=float, default=0.7)
-    ap.add_argument("--sim-window", type=int, default=6)
-    ap.add_argument("--sim-penalty", type=float, default=0.25)
-    # Step 4
-    ap.add_argument("--monitor", action="store_true",
-                    help="監視AI（フェーズ自動判定）を有効化（裏方のみ）")
-    ap.add_argument("--phase-window", type=int, default=8)
-    ap.add_argument("--phase-cohesion-min", type=float, default=0.70)
-    ap.add_argument("--phase-unresolved-drop", type=float, default=0.25)
-    ap.add_argument("--phase-loop-threshold", type=int, default=3)
-    # 思考→審査→発言
-    ap.add_argument("--no-think-mode", dest="think_mode", action="store_false")
-    ap.add_argument("--no-think-debug", dest="think_debug", action="store_false")
-    # Step 7
-    ap.add_argument("--kpi-window", type=int, default=6)
-    ap.add_argument("--no-kpi-auto-prompt", dest="kpi_auto_prompt", action="store_false")
-    ap.add_argument("--no-kpi-auto-tune", dest="kpi_auto_tune", action="store_false")
-    ap.add_argument("--th-diversity-min", type=float, default=0.55)
-    ap.add_argument("--th-decision-min", type=float, default=0.40)
-    ap.add_argument("--th-progress-stall", type=int, default=3)
-    ap.add_argument("--ui-full", dest="ui_minimal", action="store_false",
-                    help="従来の見出し・役職ラベルを表示（台本風UIに戻す）")
-    return ap.parse_args()
+from backend.ai_meeting.cli import build_agents, main, parse_args
 
-def build_agents(tokens: List[str]) -> List[AgentConfig]:
-    agents: List[AgentConfig] = []
-    default_system = (
-        "あなたは会議参加者です。日本語で短く発言し、直前の内容に具体的に応答し、"
-        "次の一手を提示してください。見出し/箇条書き/長い前置きは禁止"
-    )
-    for t in tokens:
-        raw = t.strip()
-        if "=" in raw:
-            name,system = raw.split("=",1)
-            agents.append(AgentConfig(name=name.strip(), system=system.strip()))
-        else:
-            agents.append(AgentConfig(name=raw, system=default_system))
-    return agents
-
-def main():
-    args = parse_args()
-    agents = build_agents(args.agents)
-    cfg = MeetingConfig(
-        topic=args.topic,
-        precision=clamp(args.precision,1,10),
-        rounds=args.rounds,
-        agents=agents,
-        backend_name=args.backend,
-        openai_model=args.openai_model or os.getenv("OPENAI_MODEL"),
-        ollama_model=args.ollama_model or os.getenv("OLLAMA_MODEL"),
-        resolve_round=getattr(args, "resolve_round", True),
-        chat_mode=getattr(args, "chat_mode", True),
-        chat_max_sentences=args.chat_max_sentences,
-        chat_max_chars=args.chat_max_chars,
-        chat_window=args.chat_window,
-        outdir=getattr(args, "outdir", None),
-        equilibrium=getattr(args, "equilibrium", False),
-        monitor=getattr(args, "monitor", False),
-        shock=getattr(args, "shock", "off"),
-        shock_ttl=max(1, int(getattr(args, "shock_ttl", 2))),
-        ui_minimal=getattr(args, "ui_minimal", True),
-        cooldown=max(0.0, float(getattr(args,"cooldown",0.10))),
-        cooldown_span=max(0, int(getattr(args,"cooldown_span",1))),
-        topk=max(1, int(getattr(args,"topk",3))),
-        select_temp=max(0.05, float(getattr(args,"select_temp",0.7))),
-        sim_window=max(0, int(getattr(args,"sim_window",6))),
-        sim_penalty=max(0.0, float(getattr(args,"sim_penalty",0.25))),
-        phase_window=max(1, int(getattr(args,"phase_window",8))),
-        phase_cohesion_min=min(1.0, max(0.0, float(getattr(args,"phase_cohesion_min",0.70)))),
-        phase_unresolved_drop=min(1.0, max(0.0, float(getattr(args,"phase_unresolved_drop",0.25)))),
-        phase_loop_threshold=max(1, int(getattr(args,"phase_loop_threshold",3))),
-        think_mode=getattr(args, "think_mode", True),
-        think_debug=getattr(args, "think_debug", True),
-    )
-    # Step 7 の引数を cfg に追加
-    cfg.kpi_window = max(1, int(getattr(args, "kpi_window", 6)))
-    cfg.kpi_auto_prompt = getattr(args, "kpi_auto_prompt", True)
-    cfg.kpi_auto_tune = getattr(args, "kpi_auto_tune", True)
-    cfg.th_diversity_min = max(0.0, float(getattr(args, "th_diversity_min", 0.55)))
-    cfg.th_decision_min = max(0.0, float(getattr(args, "th_decision_min", 0.40)))
-    cfg.th_progress_stall = max(1, int(getattr(args, "th_progress_stall", 3)))
-
-    Meeting(cfg).run()
 
 if __name__ == "__main__":
     main()
