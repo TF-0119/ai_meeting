@@ -18,6 +18,7 @@ from .evaluation import KPIEvaluator
 from .llm import LLMRequest, OllamaBackend, OpenAIBackend
 from .logging import LiveLogWriter
 from .metrics import MetricsLogger
+from .testing import NullMetricsLogger, is_test_mode, setup_test_environment
 from .utils import banner, clamp
 
 
@@ -28,7 +29,10 @@ class Meeting:
         self.cfg = cfg
         self.history: List[Turn] = []
         # backend
-        if cfg.backend_name == "openai":
+        self._test_mode = is_test_mode()
+        if self._test_mode:
+            self.backend = setup_test_environment([a.name for a in self.cfg.agents])
+        elif cfg.backend_name == "openai":
             self.backend = OpenAIBackend(model=cfg.openai_model)
         else:
             model = cfg.ollama_model or os.getenv("OLLAMA_MODEL", "llama3")
@@ -53,7 +57,10 @@ class Meeting:
 
         # メトリクスロガー開始
         self._last_spoke: Dict[str, int] = {}  # speaker_name -> last turn index (global)
-        self.metrics = MetricsLogger(self.logger.dir, interval=1.0)
+        if self._test_mode:
+            self.metrics = NullMetricsLogger(self.logger.dir)
+        else:
+            self.metrics = MetricsLogger(self.logger.dir, interval=1.0)
         self.metrics.start()
 
     # === 思考→審査→当選発言 用の補助 ===
@@ -468,7 +475,8 @@ class Meeting:
                 if self._ctrl_ttl == 0:
                     self._ctrl_hint = None
 
-            time.sleep(0.2)
+            if not self._test_mode:
+                time.sleep(0.2)
 
         # --- 残課題消化ラウンド（任意） ---
         if self.cfg.resolve_round and self._pending.items:

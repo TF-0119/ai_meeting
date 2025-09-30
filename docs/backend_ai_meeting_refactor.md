@@ -7,6 +7,26 @@
 * CLI インターフェース、設定、LLM アダプタなどを明確にモジュール化し、
   メンテナンス性とテスト容易性を向上させる。
 
+## 現状の公開構成
+
+2024 年時点で `backend/ai_meeting/` パッケージは以下のモジュールに整理済みです。
+
+```text
+backend/ai_meeting/
+├── __init__.py      # MeetingConfig / Meeting / build_agents などの公開 API
+├── __main__.py      # `python -m backend.ai_meeting` エントリーポイント
+├── cli.py           # CLI 引数解析と main()
+├── config.py        # AgentConfig / MeetingConfig モデル
+├── controllers.py   # KPI 制御・フェーズ判定
+├── evaluation.py    # KPI 評価器
+├── logging.py       # LiveLogWriter
+├── meeting.py       # 実際の会議進行ロジック
+├── testing.py       # DeterministicLLMBackend などテスト補助
+└── ...
+```
+
+`testing.py` に含まれる `DeterministicLLMBackend` と `NullMetricsLogger` は `AI_MEETING_TEST_MODE=deterministic` をセットしたときに自動利用され、CLI を含むエンドツーエンドテストを完全オフラインで再現できます。CI ではこのテストモードを前提に `scripts/check_cli_baseline.py` からベースライン比較を行います。
+
 ## 段階的移行手順
 
 1. **パッケージ土台の作成（現段階）**
