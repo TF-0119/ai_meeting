@@ -73,52 +73,22 @@ class OllamaBackend:
 class EchoBackend:
     def __init__(self, tag: str = "echo"):
         self.tag = tag
+
     def generate(self, req: LLMRequest) -> str:
-        """
-        Ollama /api/chat はデフォルトで stream=True（改行区切りJSON）。
-        ここでは stream=False を指定して単一JSONで受け取り、堅牢にパースする。
-        """
-        payload = {
-            "model": self.model,
-            "messages": req.messages,
-            "options": {"temperature": req.temperature},
-            "stream": False,  # ★ これが重要（単一JSONにする）
-        }
-        if requests is None:  # pragma: no cover - 実行時に明示的に通知する
-            raise RuntimeError("EchoBackend を利用するには requests をインストールしてください。")
+        """渡された会話履歴を単純に整形して返すエコーバックエンド。"""
 
-        r = requests.post(f"{self.host}/api/chat", json=payload, timeout=120)
-        r.raise_for_status()
+        parts: list[str] = []
 
-        # まずは通常ケース（単一JSON）を試す
-        try:
-            data = r.json()
-        except Exception:
-            # もしサーバがなぜかストリームを返した場合の保険：行ごとに最後のJSONを拾う
-            content = ""
-            for line in r.text.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = __import__("json").loads(line)
-                except Exception:
-                    continue
-                # 代表的なキーを順に探す
-                content = (
-                    obj.get("message", {}).get("content")
-                    or obj.get("response")
-                    or content
-                )
-                # done フラグがあれば終了
-                if obj.get("done"):
-                    break
-            return content or ""
+        if req.system:
+            parts.append(f"system: {req.system}")
 
-        # 非ストリームの代表的な2パターンに対応
-        content = (
-            data.get("message", {}).get("content")
-            or data.get("response")
-            or ""
-        )
-        return content
+        for message in req.messages:
+            role = message.get("role", "unknown")
+            content = message.get("content", "")
+            parts.append(f"{role}: {content}")
+
+        joined = " | ".join(parts)
+        if not joined:
+            return f"[{self.tag}]"
+
+        return f"[{self.tag}] {joined}"
