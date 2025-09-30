@@ -16,14 +16,35 @@ AI Meeting は、大規模言語モデル (LLM) を複数名の参加者とし�
 ## ディレクトリ構成
 ```text
 ai_meeting/
-├── backend/            # 会議エンジン (Python)
+├── backend/
+│   ├── ai_meeting/     # Python パッケージ化された会議エンジン
+│   │   ├── cli.py      # CLI 引数と main()
+│   │   ├── meeting.py  # 進行ロジック本体
+│   │   ├── testing.py  # 決定論的バックエンドなどテスト支援
+│   │   └── ...
+│   └── tests/          # CLI エンドツーエンドテスト
+├── docs/               # 技術メモ・サンプルログ
 ├── frontend/           # React/Vite フロントエンド
-├── logs/               # 実行ごとのログ出力 (meeting_live.jsonl 等)
-└── README.md
+├── scripts/            # CI 向け補助スクリプト
+└── logs/               # 実行ごとのログ出力 (meeting_live.jsonl 等)
 ```
 
+### Python パッケージとしての利用例
+
+`backend.ai_meeting` はモジュール分割済みのパッケージとしても利用できます。CLI を呼ぶ代わりに、コード内で直接会議を実行したい場合は以下のようにします。
+
+```python
+from backend.ai_meeting import Meeting, MeetingConfig, build_agents
+
+agents = build_agents(["Alice", "Bob"])
+cfg = MeetingConfig(topic="1畳で遊べる新スポーツを仕様化", agents=agents)
+Meeting(cfg).run()
+```
+
+オフラインの自動テストでは `AI_MEETING_TEST_MODE=deterministic` を環境変数に設定すると、`backend.ai_meeting.testing.DeterministicLLMBackend` が自動で差し替わり、外部 LLM なしで決定論的なログと KPI を得られます。
+
 ## バックエンドのセットアップと実行
-1. Python 3.10 以上の環境を用意し、必要なパッケージをインストールします。Ollama を使う場合は `requests`、OpenAI を使う場合は `openai` が必要です。
+1. Python 3.10 以上の環境を用意し、必要なパッケージをインストールします。Ollama を使う場合は `requests`、OpenAI を使う場合は `openai` が必要です。テストモードのみを動かす場合は `pydantic` と `psutil` があれば十分です。
    ```bash
    pip install pydantic psutil matplotlib pynvml GPUtil requests openai
    ```
@@ -77,6 +98,10 @@ ai_meeting/
 
 ## 既存ログの活用
 `logs/` ディレクトリには過去の会議結果がまとまっています。`meeting_live.jsonl` と `meeting_result.json` をそのまま利用すれば、フロントエンドの Result 画面で KPI や最終合意案を確認できます。【F:frontend/src/services/api.js†L17-L37】【F:frontend/src/pages/Result.jsx†L8-L58】
+
+## CI によるリグレッションチェック
+
+GitHub Actions のワークフロー `.github/workflows/cli-regression.yml` では `pytest backend/tests/test_cli_e2e.py` を実行した後、`python scripts/check_cli_baseline.py` を介して `python -m backend.ai_meeting` の出力ログと `docs/samples/cli_baseline/*.json` に保存したベースラインを比較します。決定論的バックエンドを利用することで、主要フラグ（短文チャット／旧フロー）ごとのログ・KPI 差分を CI 上で自動検知します。
 
 ## ライセンス
 本リポジトリのライセンスは未指定です。利用ポリシーが必要な場合はリポジトリ所有者に確認してください。
