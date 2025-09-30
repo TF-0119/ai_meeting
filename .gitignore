@@ -5,24 +5,22 @@ build/
 npm-debug.log*
 yarn-error.log*
 pnpm-lock.yaml
-
 # PHP/Composer
 vendor/
 composer.lock
-
+# Python
+*.pyc
+__pycache__/
 # Env/Secrets
 .env
 .env.*
-
 # IDE/OS
 .vscode/
 .DS_Store
 Thumbs.db
-
 # Logs and Meeting Data
 *.log
 logs/
-
 # Meeting output files (if any exist outside logs/)
 meeting_live.md
 meeting_live.jsonl
