@@ -14,6 +14,7 @@ def main():
     parser.add_argument("--backend", choices=["openai", "ollama", "echo"], default="echo")
     parser.add_argument("--config", help="JSON config path")
     parser.add_argument("--outdir", default=None)
+    parser.add_argument("--agents", nargs="*", help="互換性維持用のダミー引数")
     args = parser.parse_args()
 
     cfg = load_config(args)

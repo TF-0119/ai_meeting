@@ -1,6 +1,11 @@
 # backend/ai_meeting/backends.py
 from typing import Protocol
-import requests
+
+try:
+    import requests
+except ModuleNotFoundError:  # requests が未インストールでも --help が動作するように遅延対応
+    requests = None  # type: ignore[assignment]
+
 from .models import LLMRequest
 
 class LLMBackend(Protocol):
@@ -27,6 +32,9 @@ class OllamaBackend:
             "options": {"temperature": req.temperature},
             "stream": False,  # 単一JSONに固定 [file:1]
         }  # [file:1]
+
+        if requests is None:  # pragma: no cover - 実行時に明示的に通知する
+            raise RuntimeError("OllamaBackend を利用するには requests をインストールしてください。")
 
         r = requests.post(f"{self.host}/api/chat", json=payload, timeout=120)
         r.raise_for_status()  # [file:1]
@@ -76,6 +84,9 @@ class EchoBackend:
             "options": {"temperature": req.temperature},
             "stream": False,  # ★ これが重要（単一JSONにする）
         }
+        if requests is None:  # pragma: no cover - 実行時に明示的に通知する
+            raise RuntimeError("EchoBackend を利用するには requests をインストールしてください。")
+
         r = requests.post(f"{self.host}/api/chat", json=payload, timeout=120)
         r.raise_for_status()
 
