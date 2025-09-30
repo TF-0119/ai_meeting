@@ -2,24 +2,31 @@
 import argparse
 from pathlib import Path
 from .config import load_config
-from .backends import OpenAIBackend, OllamaBackend
+from .backends import OpenAIBackend, OllamaBackend, EchoBackend
 from .runner import Runner
 from .utils import default_outdir
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--topic", required=True)
-    ap.add_argument("--rounds", type=int, default=3)
-    ap.add_argument("--precision", type=int, default=5)
-    ap.add_argument("--backend", choices=["openai","ollama"], default="ollama")
-    ap.add_argument("--config", help="JSON config path")
-    ap.add_argument("--outdir", default=None)
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(prog="ai_meeting")
+    parser.add_argument("--topic", required=True)
+    parser.add_argument("--rounds", type=int, default=3)
+    parser.add_argument("--precision", type=int, default=5)
+    parser.add_argument("--backend", choices=["openai", "ollama", "echo"], default="echo")
+    parser.add_argument("--config", help="JSON config path")
+    parser.add_argument("--outdir", default=None)
+    args = parser.parse_args()
 
     cfg = load_config(args)
-    backend = OllamaBackend(cfg.ollama_model) if cfg.backend_name=="ollama" else OpenAIBackend(cfg.openai_model)
-    outdir = Path(args.outdir) if args.outdir else default_outdir(Path("logs"), cfg.topic)
+    backend_name = getattr(cfg, "backend_name", args.backend)
 
+    if backend_name == "ollama":
+        backend = OllamaBackend(cfg.ollama_model)
+    elif backend_name == "openai":
+        backend = OpenAIBackend(cfg.openai_model)
+    else:
+        backend = EchoBackend()
+
+    outdir = Path(args.outdir) if args.outdir else default_outdir(Path("logs"), cfg.topic)
     result = Runner(cfg, backend, outdir).run()
     print("Done:", result)
 

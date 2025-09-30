@@ -1,4 +1,3 @@
-# backend/ai_meeting/models.py
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, Literal
 
@@ -18,7 +17,7 @@ class MeetingConfig(BaseModel):
     topic: str
     rounds: int = 3
     precision: int = 5
-    backend_name: Literal["openai", "ollama"] = "ollama"
+    backend_name: Literal["openai", "ollama", "echo"] = "echo"
     openai_model: str = "gpt-4o-mini"
     ollama_model: str = "qwen2.5:7b"
     stop_diversity: float = 0.15
