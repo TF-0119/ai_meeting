@@ -7,7 +7,8 @@ from typing import List
 
 from backend.defaults import DEFAULT_AGENT_NAMES
 
-from .config import AgentConfig, MeetingConfig, clamp
+from .config import AgentConfig, MeetingConfig
+from .utils import clamp
 from .meeting import Meeting
 
 
