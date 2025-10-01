@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from .config import AgentConfig, MeetingConfig, Turn
-from .controllers import KPIFeedback, Monitor, PendingTracker, ShockEngine
+from .controllers import KPIFeedback, Monitor, PendingTracker, PhaseEvent, ShockEngine
 from .evaluation import KPIEvaluator
 from .llm import LLMRequest, OllamaBackend, OpenAIBackend
 from .logging import LiveLogWriter
@@ -494,23 +494,30 @@ class Meeting:
 
             # Step 4: 監視AIが裏でフェーズ判定（ログのみ）
             if self._monitor:
-                ev = self._monitor.observe(self.history, self._unresolved_history, self.cfg.phase_window)
-                if ev:  # フェーズ確定
-                    self._phase_id += 1
-                    ev["phase_id"] = self._phase_id
-                    # Step5: ショック生成（裏方）
-                    if self._shock_engine:
-                        # modeに応じてパラメータを滑らかに変更（本文には一切出さない）
-                        if self._shock_engine.mode == "explore":
-                            self.cfg.select_temp = clamp(self.cfg.select_temp + 0.2, 0.7, 1.5)
-                            self.cfg.sim_penalty = clamp(self.cfg.sim_penalty - 0.1, 0.0, 0.6)
-                            self.cfg.cooldown = clamp(self.cfg.cooldown - 0.05, 0.0, 0.35)
-                        elif self._shock_engine.mode == "exploit":
-                            self.cfg.select_temp = clamp(self.cfg.select_temp - 0.2, 0.5, 1.5)
-                            self.cfg.sim_penalty = clamp(self.cfg.sim_penalty + 0.1, 0.0, 0.6)
-                            self.cfg.cooldown = clamp(self.cfg.cooldown + 0.05, 0.0, 0.35)
-                        ev["shock_used"] = self._shock_engine.mode
-                    self.logger.append_phase(ev)
+                event: Optional[PhaseEvent] = self._monitor.observe(
+                    self.history, self._unresolved_history, self.cfg.phase_window
+                )
+                if event:
+                    if event.status == "confirmed":
+                        self._phase_id += 1
+                        event.phase_id = self._phase_id
+                        if self._shock_engine:
+                            if self._shock_engine.mode == "explore":
+                                self.cfg.select_temp = clamp(self.cfg.select_temp + 0.2, 0.7, 1.5)
+                                self.cfg.sim_penalty = clamp(self.cfg.sim_penalty - 0.1, 0.0, 0.6)
+                                self.cfg.cooldown = clamp(self.cfg.cooldown - 0.05, 0.0, 0.35)
+                            elif self._shock_engine.mode == "exploit":
+                                self.cfg.select_temp = clamp(self.cfg.select_temp - 0.2, 0.5, 1.5)
+                                self.cfg.sim_penalty = clamp(self.cfg.sim_penalty + 0.1, 0.0, 0.6)
+                                self.cfg.cooldown = clamp(self.cfg.cooldown + 0.05, 0.0, 0.35)
+                            event.shock_used = self._shock_engine.mode
+                        self.logger.append_phase(event)
+                    elif event.status == "candidate":
+                        self.logger.append_phase(event)
+                    elif event.status == "closed":
+                        if event.phase_id is None:
+                            event.phase_id = self._phase_id
+                        self.logger.append_phase(event)
                     # フェーズが変わっても “会議本文には何も挿入しない”（参加AIは気づかない）
 
             # 発言者がどちらの経路でも安全に参照できるよう current_speaker を使う
