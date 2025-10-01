@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import typing
 from typing import Iterable, Optional
+from urllib.parse import urlparse
+import ipaddress
 
 from pydantic import BaseModel
 
@@ -55,14 +57,38 @@ class OpenAIBackend(LLMBackend):
 class OllamaBackend(LLMBackend):
     """ローカルの Ollama API を利用するバックエンド。"""
 
-    def __init__(self, model: str = "llama3", host: str = "http://localhost:11434"):
+    def __init__(self, model: str = "llama3", host: str = "http://127.0.0.1:11434"):
         import requests
 
         self.requests = requests
         self.model = model
-        self.host = host
-        if not self.host.startswith("http://localhost"):
-            raise RuntimeError("Ollama host must be localhost for 100% local run.")
+        parsed = urlparse(host)
+        if parsed.scheme not in {"http", "https"}:
+            raise RuntimeError("Ollama host must be HTTP/HTTPS URL.")
+        if not parsed.hostname:
+            raise RuntimeError("Ollama host must include hostname.")
+
+        hostname = parsed.hostname
+        if not self._is_local_hostname(hostname):
+            raise RuntimeError("Ollama host must point to a local address.")
+
+        port = parsed.port
+        if port is None:
+            port = 443 if parsed.scheme == "https" else 80
+
+        self.host = f"{parsed.scheme}://{hostname}:{port}"
+
+    @staticmethod
+    def _is_local_hostname(hostname: str) -> bool:
+        """ローカルアドレスかどうかを判定する。"""
+
+        if hostname == "localhost":
+            return True
+        try:
+            ip = ipaddress.ip_address(hostname)
+        except ValueError:
+            return False
+        return ip.is_loopback or ip.is_private
 
     def generate(self, req: LLMRequest) -> str:
         """Ollama のチャット API を利用して応答を生成する。"""

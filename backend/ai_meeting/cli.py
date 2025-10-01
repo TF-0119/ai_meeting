@@ -28,6 +28,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--backend", choices=["openai", "ollama"], default="ollama")
     ap.add_argument("--openai-model", default=None)
     ap.add_argument("--ollama-model", default=None)
+    ap.add_argument("--ollama-url", default=None, help="Ollama のベースURL（例: http://127.0.0.1:11434）")
     ap.add_argument(
         "--no-resolve-round",
         dest="resolve_round",
@@ -125,6 +126,7 @@ def main() -> None:
         backend_name=args.backend,
         openai_model=args.openai_model or os.getenv("OPENAI_MODEL"),
         ollama_model=args.ollama_model or os.getenv("OLLAMA_MODEL"),
+        ollama_url=args.ollama_url or os.getenv("OLLAMA_URL"),
         resolve_round=getattr(args, "resolve_round", True),
         chat_mode=getattr(args, "chat_mode", True),
         chat_max_sentences=args.chat_max_sentences,

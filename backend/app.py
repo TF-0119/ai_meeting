@@ -7,6 +7,7 @@ from backend.settings import settings
 from backend.defaults import DEFAULT_AGENT_STRING, DEFAULT_AGENT_NAMES
 from pathlib import Path
 from typing import Optional, Dict
+from urllib.parse import urlparse
 import psutil
 import httpx, sys, os
 import subprocess, shlex, re, time, threading
@@ -72,6 +73,14 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
     REPO_ROOT = Path(__file__).resolve().parent.parent
     LOGS_ROOT = REPO_ROOT / "logs"
 
+    parsed_ollama = urlparse(settings.OLLAMA_URL)
+    if not parsed_ollama.scheme or not parsed_ollama.hostname:
+        raise HTTPException(status_code=500, detail="Invalid OLLAMA_URL in settings")
+    ollama_port = parsed_ollama.port
+    if ollama_port is None:
+        ollama_port = 443 if parsed_ollama.scheme == "https" else 80
+    normalized_ollama_url = f"{parsed_ollama.scheme}://{parsed_ollama.hostname}:{ollama_port}"
+
     ts = time.strftime("%Y%m%d-%H%M%S")
     slug = _slugify(body.topic)
     outdir = (Path(body.outdir) if body.outdir
@@ -100,15 +109,20 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
         "--backend", body.backend,
         "--outdir", str(outdir),
     ]
+    if body.backend == "ollama":
+        cmd_list.extend(["--ollama-url", normalized_ollama_url])
     cmd_str = " ".join(shlex.quote(c) for c in cmd_list)
 
     # 起動
+    child_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    if body.backend == "ollama":
+        child_env["OLLAMA_URL"] = normalized_ollama_url
     proc = subprocess.Popen(
         cmd_list,
         stdout=stdout_f,
         stderr=stderr_f,
         cwd=str(REPO_ROOT),
-        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+        env=child_env,
         creationflags=0  # Windows なら CREATE_NO_WINDOW なども可
     )
 

@@ -37,6 +37,7 @@ class MeetingConfig(BaseModel):
     backend_name: Literal["openai", "ollama"] = "ollama"
     openai_model: Optional[str] = None
     ollama_model: Optional[str] = None
+    ollama_url: Optional[str] = None
     max_tokens: int = 800
     resolve_round: bool = True  # 最後に「残課題消化ラウンド」を自動挿入
     # --- 短文チャット（既定ON） ---
