@@ -150,8 +150,9 @@ class Meeting:
             }
         win_raw = j.get("winner")
         win_norm = _normalize_name(win_raw)
-        if win_norm in name_lookup:
-            win = name_lookup[win_norm]
+        requested_winner = name_lookup.get(win_norm)
+        if requested_winner:
+            win = requested_winner
         elif out_scores:
             top_score = max(v["score"] for v in out_scores.values())
             top_candidates = [
@@ -162,7 +163,58 @@ class Meeting:
             win = random.choice(top_candidates if top_candidates else names)
         else:
             win = random.choice(names)
-        return {"scores": out_scores, "winner": win}
+        result = {"scores": out_scores, "winner": win}
+        if requested_winner or isinstance(win_raw, str):
+            raw_text = requested_winner or str(win_raw).strip()
+            result["raw_winner"] = raw_text
+        return result
+
+    def _resolve_winner(self, verdict: Dict, previous_name: Optional[str]) -> str:
+        """直前の発言者を考慮しつつ最終的な勝者を決定する。"""
+
+        agent_names = [agent.name for agent in self.cfg.agents]
+        if not agent_names:
+            raise ValueError("エージェントが1人も設定されていません。")
+
+        requested = verdict.get("winner") if isinstance(verdict, dict) else None
+        previous = previous_name if previous_name in agent_names else None
+
+        if isinstance(requested, str) and requested in agent_names and requested != previous:
+            return requested
+
+        scores: Dict[str, Dict[str, float]] = verdict.get("scores") if isinstance(verdict, dict) else {}
+        candidates: List[Tuple[str, float]] = []
+        for name in agent_names:
+            if name == previous:
+                continue
+            score = 0.0
+            if isinstance(scores, dict):
+                record = scores.get(name)
+                if isinstance(record, dict):
+                    raw_score = record.get("score")
+                    try:
+                        score = float(raw_score)
+                    except (TypeError, ValueError):
+                        score = 0.0
+                    else:
+                        if math.isnan(score):
+                            score = 0.0
+            candidates.append((name, score))
+
+        if not candidates:
+            if isinstance(requested, str) and requested in agent_names:
+                return requested
+            return previous or agent_names[0]
+
+        top_score = max(score for _, score in candidates)
+        top_candidates = [
+            name
+            for name, score in candidates
+            if math.isclose(score, top_score, rel_tol=1e-9, abs_tol=1e-9)
+        ]
+        if not top_candidates:
+            top_candidates = [candidates[0][0]]
+        return top_candidates[0]
 
     def _try_parse_json(self, raw: str):
         # ```json ... ``` または テキスト中の最外郭JSON を頑丈に抽出
@@ -325,10 +377,9 @@ class Meeting:
                 thoughts: Dict[str, str] = {ag.name: self._think(ag, last_summary) for ag in self.cfg.agents}
                 # 2) 均衡AIが審査→勝者
                 verdict = self._judge_thoughts(thoughts)
-                winner_name = verdict.get("winner") or max(
-                    [(k, v.get("score", 0.0)) for k, v in verdict.get("scores", {}).items()],
-                    key=lambda kv: kv[1],
-                )[0]
+                previous_speaker = self.history[-1].speaker if self.history else None
+                winner_name = self._resolve_winner(verdict, previous_speaker)
+                verdict["resolved_winner"] = winner_name
                 winner = next((a for a in self.cfg.agents if a.name == winner_name), self.cfg.agents[0])
                 # 3) 勝者が自分の思考だけで発言
                 content = self._speak_from_thought(winner, thoughts.get(winner.name, ""))

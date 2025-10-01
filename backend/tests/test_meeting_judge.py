@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import List, Optional
 
 import pytest
 
@@ -29,11 +30,18 @@ class _StubBackend:
         return self.response
 
 
-def _make_meeting(response: str) -> Meeting:
+def _make_meeting(response: str, agent_names: Optional[List[str]] = None) -> Meeting:
     """テスト用に必要最低限の属性だけを持つ Meeting インスタンスを生成する。"""
 
+    if agent_names is None:
+        agent_names = ["Alice", "Bob"]
+
     meeting = Meeting.__new__(Meeting)
-    meeting.cfg = SimpleNamespace(topic="テスト", chat_window=2)
+    meeting.cfg = SimpleNamespace(
+        topic="テスト",
+        chat_window=2,
+        agents=[SimpleNamespace(name=name) for name in agent_names],
+    )
     meeting.history = []
     meeting.backend = _StubBackend(response)
     return meeting
@@ -93,3 +101,32 @@ def test_judge_thoughts_fallback_uses_random_choice(monkeypatch: pytest.MonkeyPa
 
     assert result["winner"] == "Bob"
     assert chosen_candidates and chosen_candidates[0] == ["Alice", "Bob"]
+
+
+def test_resolve_winner_switches_from_previous_speaker() -> None:
+    """前回と同じ勝者候補が返ってきた場合に別エージェントへ切り替える。"""
+
+    meeting = _make_meeting("{}", ["Alice", "Bob", "Carol"])
+    verdict = {
+        "winner": "Alice",
+        "scores": {
+            "Alice": {"score": 0.9},
+            "Bob": {"score": 0.9},
+            "Carol": {"score": 0.9},
+        },
+    }
+
+    resolved = meeting._resolve_winner(verdict, "Alice")
+
+    assert resolved == "Bob"
+
+
+def test_resolve_winner_switches_even_without_scores() -> None:
+    """score 情報が欠損していても直前と異なるエージェントを選ぶ。"""
+
+    meeting = _make_meeting("{}", ["Alice", "Bob"])
+    verdict = {"winner": "Alice", "scores": {}}
+
+    resolved = meeting._resolve_winner(verdict, "Alice")
+
+    assert resolved == "Bob"
