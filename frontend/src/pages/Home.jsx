@@ -39,7 +39,8 @@ export default function Home() {
         rounds: String(roundsValue),
         agents,
       }).toString();
-      nav(`/meeting/${meetingId}?${params}`);
+      const encodedMeetingId = encodeURIComponent(meetingId);
+      nav(`/meeting/${encodedMeetingId}?${params}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
