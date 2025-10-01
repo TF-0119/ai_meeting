@@ -35,5 +35,23 @@
       "meta": {}
     }
   ],
-  "final": "合意事項:\n- 議題に向けた初期対応を進める\n残課題:\n- 詳細な要件整理が未完了\n直近アクション:\n- 担当者が次回ミーティングまでに選択肢を比較"
+  "final": "合意事項:\n- 議題に向けた初期対応を進める\n残課題:\n- 詳細な要件整理が未完了\n直近アクション:\n- 担当者が次回ミーティングまでに選択肢を比較",
+  "kpi": {
+    "progress": 0.0,
+    "diversity": 0.0,
+    "decision_density": 0.0,
+    "spec_coverage": 0.0
+  },
+  "files": {
+    "meeting_live_md": "meeting_live.md",
+    "meeting_live_jsonl": "meeting_live.jsonl",
+    "meeting_live_html": "meeting_live.html",
+    "phases_jsonl": "phases.jsonl",
+    "thoughts_jsonl": "thoughts.jsonl",
+    "control_jsonl": "control.jsonl",
+    "kpi_json": "kpi.json",
+    "metrics_csv": "metrics.csv",
+    "metrics_cpu_mem_png": "metrics_cpu_mem.png",
+    "metrics_gpu_png": "metrics_gpu.png"
+  }
 }
