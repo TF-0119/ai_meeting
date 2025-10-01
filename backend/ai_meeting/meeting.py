@@ -37,7 +37,8 @@ class Meeting:
             self.backend = OpenAIBackend(model=cfg.openai_model)
         else:
             model = cfg.ollama_model or os.getenv("OLLAMA_MODEL", "llama3")
-            self.backend = OllamaBackend(model=model)
+            host = cfg.ollama_url or os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
+            self.backend = OllamaBackend(model=model, host=host)
         rp = self.cfg.runtime_params()
         self.temperature = rp["temperature"]
         self.critique_passes = rp["critique_passes"]
