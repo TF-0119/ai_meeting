@@ -9,6 +9,7 @@ import re
 import textwrap
 import time
 import traceback
+from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -529,18 +530,42 @@ class Meeting:
         self.logger.append_final(final)
 
         # Step6: KPI 評価と保存（最後の Meeting クラスにも入れる）
+        kpi_result: Optional[Dict] = None
         try:
             evaluator = KPIEvaluator(self.cfg)
             pending = getattr(self, "_pending", None)
-            kpi = evaluator.evaluate(self.history, pending, final)
-            self.logger.append_kpi(kpi)
-            print("\n=== KPI ===\n" + json.dumps(kpi, ensure_ascii=False, indent=2))
+            kpi_result = evaluator.evaluate(self.history, pending, final)
+            self.logger.append_kpi(kpi_result)
+            print("\n=== KPI ===\n" + json.dumps(kpi_result, ensure_ascii=False, indent=2))
         except Exception as e:
             print(f"[KPI] 評価で例外: {e}")
 
         print(f"\n（ライブログ: {self.logger.dir / 'meeting_live.md'} / {self.logger.dir / 'meeting_live.jsonl'}）")
         result_path = self.logger.dir / "meeting_result.json"
         print(f"\n（保存: {result_path}）")
+        base_dir = self.logger.dir
+
+        def _relative(path: Path) -> str:
+            """成果物を meeting_result.json からの相対パスで表現する。"""
+
+            try:
+                return str(path.relative_to(base_dir))
+            except ValueError:
+                return path.name
+
+        artifact_candidates = {
+            "meeting_live_md": self.logger.md,
+            "meeting_live_jsonl": self.logger.jsonl,
+            "meeting_live_html": self.logger.html,
+            "phases_jsonl": self.logger.phase_log,
+            "thoughts_jsonl": self.logger.thoughts_log,
+            "control_jsonl": base_dir / "control.jsonl",
+            "kpi_json": base_dir / "kpi.json",
+            "metrics_csv": base_dir / "metrics.csv",
+            "metrics_cpu_mem_png": base_dir / "metrics_cpu_mem.png",
+            "metrics_gpu_png": base_dir / "metrics_gpu.png",
+        }
+        files = {key: _relative(path) for key, path in artifact_candidates.items()}
         with result_path.open("w", encoding="utf-8") as f:
             json.dump(
                 {
@@ -551,6 +576,8 @@ class Meeting:
                     "agents": [a.model_dump() for a in self.cfg.agents],
                     "turns": [t.__dict__ for t in self.history],
                     "final": final,
+                    "kpi": kpi_result or {},
+                    "files": files,
                 },
                 f,
                 ensure_ascii=False,
