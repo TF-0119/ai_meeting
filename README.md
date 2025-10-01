@@ -4,9 +4,9 @@
 AI Meeting は、大規模言語モデル (LLM) を複数名の参加者として協調させる会議シミュレーターです。バックエンドは Python 製の CLI スクリプトで、任意の名前とプロンプトを与えた参加者が議論し、ログや KPI を自動で記録します。フロントエンドは React/Vite 製の簡易ビューワーで、生成されたログをタイムライン形式で閲覧できます。
 
 ## 主な機能
-- **マルチエージェント会議進行**：任意の参加者名とシステムプロンプトを組み合わせ、短文チャット制約の下で思考→審査→発言を繰り返し、ラウンド要約や残課題解消ラウンドも自動化されています。【F:backend/ai_meeting.py†L103-L154】【F:backend/ai_meeting.py†L672-L1047】
-- **ログ生成と分析**：`meeting_live.md` / `meeting_live.jsonl` / `meeting_result.json` をはじめ、CPU・GPU 利用率の時系列 (`metrics.csv` やグラフ画像) を保存します。【F:backend/ai_meeting.py†L156-L270】【F:backend/ai_meeting.py†L1045-L1093】
-- **KPI 評価とフィードバック**：議論の多様性・決定密度などを自動計測し、閾値割れ時にはプロンプトを調整する仕組みを備えています。【F:backend/ai_meeting.py†L262-L312】【F:backend/ai_meeting.py†L1065-L1074】
+- **マルチエージェント会議進行**：任意の参加者名とシステムプロンプトを組み合わせ、短文チャット制約の下で思考→審査→発言を繰り返し、ラウンド要約や残課題解消ラウンドも自動化されています。【F:backend/ai_meeting/config.py†L30-L85】【F:backend/ai_meeting/meeting.py†L281-L507】
+- **ログ生成と分析**：`meeting_live.md` / `meeting_live.jsonl` / `meeting_result.json` をはじめ、CPU・GPU 利用率の時系列 (`metrics.csv` やグラフ画像) を保存します。【F:backend/ai_meeting/logging.py†L14-L139】【F:backend/ai_meeting/meeting.py†L541-L564】
+- **KPI 評価とフィードバック**：議論の多様性・決定密度などを自動計測し、閾値割れ時にはプロンプトを調整する仕組みを備えています。【F:backend/ai_meeting/controllers.py†L87-L145】【F:backend/ai_meeting/evaluation.py†L10-L47】
 - **フロントエンド表示**：生成ログをポーリングしてタイムライン・要約・KPI を表示する React UI を提供します。【F:frontend/src/pages/Meeting.jsx†L1-L96】【F:frontend/src/pages/Result.jsx†L8-L58】
 
 > 🔰 **初心者向けガイド**
@@ -48,9 +48,9 @@ Meeting(cfg).run()
    ```bash
    pip install pydantic psutil matplotlib pynvml GPUtil requests openai
    ```
-   ※ `pynvml` や `GPUtil` は GPU 利用率を取得したいときのみ必須です。【F:backend/ai_meeting.py†L325-L408】
-2. Ollama を利用する場合は `ollama run llama3` などでローカルサーバーを立ち上げておきます (既定は `http://localhost:11434`)。【F:backend/ai_meeting.py†L60-L87】
-3. OpenAI を利用する場合は `OPENAI_API_KEY` と必要なら `OPENAI_MODEL` を環境変数に設定します。【F:backend/ai_meeting.py†L41-L57】
+   ※ `pynvml` や `GPUtil` は GPU 利用率を取得したいときのみ必須です。【F:backend/ai_meeting/metrics.py†L17-L93】
+2. Ollama を利用する場合は `ollama run llama3` などでローカルサーバーを立ち上げておきます (既定は `http://localhost:11434`)。【F:backend/ai_meeting/llm.py†L55-L80】
+3. OpenAI を利用する場合は `OPENAI_API_KEY` と必要なら `OPENAI_MODEL` を環境変数に設定します。【F:backend/ai_meeting/llm.py†L27-L52】
 4. 会議を実行します。例：
    ```bash
    python backend/ai_meeting.py \
@@ -64,19 +64,19 @@ Meeting(cfg).run()
    実行すると `logs/<日時_トピック>/` 以下にログ一式が出力されます。
 
 ### 主要な CLI オプション
-- `--precision`：1 (発散型)〜10 (厳密型) の指標で温度や自己検証回数を調整します。【F:backend/ai_meeting.py†L103-L154】【F:backend/ai_meeting.py†L1134-L1140】
-- `--agents`：参加者名を順番に指定。`名前=systemプロンプト` 形式を混在させると個別ルールを注入できます。【F:backend/ai_meeting.py†L1134-L1140】【F:backend/ai_meeting.py†L1186-L1199】
-- `--chat-mode/--no-chat-mode`：短文チャット制約の ON/OFF。文数や文字数制限 (`--chat-max-sentences` / `--chat-max-chars`) も変更可能です。【F:backend/ai_meeting.py†L1146-L1151】【F:backend/ai_meeting.py†L749-L839】
-- `--resolve-round`：残課題をまとめて解消するラウンドを挿入するかどうか。【F:backend/ai_meeting.py†L112-L122】【F:backend/ai_meeting.py†L1027-L1049】
-- `--think-mode`：思考→審査→発言 (T3→T1) のプロセスを有効化/無効化します。【F:backend/ai_meeting.py†L137-L140】【F:backend/ai_meeting.py†L872-L913】
-- `--outdir`：ログ出力先を明示指定。未指定なら自動で `logs/<日時_トピック>` を作成します。【F:backend/ai_meeting.py†L148-L204】
+- `--precision`：1 (発散型)〜10 (厳密型) の指標で温度や自己検証回数を調整します。【F:backend/ai_meeting/config.py†L30-L85】【F:backend/ai_meeting/meeting.py†L28-L43】
+- `--agents`：参加者名を順番に指定。`名前=systemプロンプト` 形式を混在させると個別ルールを注入できます。【F:backend/ai_meeting/cli.py†L97-L112】【F:backend/ai_meeting/config.py†L12-L19】
+- `--chat-mode/--no-chat-mode`：短文チャット制約の ON/OFF。文数や文字数制限 (`--chat-max-sentences` / `--chat-max-chars`) も変更可能です。【F:backend/ai_meeting/config.py†L43-L47】【F:backend/ai_meeting/meeting.py†L247-L264】
+- `--resolve-round`：残課題をまとめて解消するラウンドを挿入するかどうか。【F:backend/ai_meeting/config.py†L41-L47】【F:backend/ai_meeting/meeting.py†L481-L505】
+- `--think-mode`：思考→審査→発言 (T3→T1) のプロセスを有効化/無効化します。【F:backend/ai_meeting/config.py†L66-L68】【F:backend/ai_meeting/meeting.py†L297-L320】
+- `--outdir`：ログ出力先を明示指定。未指定なら自動で `logs/<日時_トピック>` を作成します。【F:backend/ai_meeting/config.py†L77-L78】【F:backend/ai_meeting/logging.py†L14-L44】
 
 ## ログファイルの構成
-- `meeting_live.jsonl`：1 行 1 発言の JSON Lines。フロントエンドのタイムラインが参照します。【F:backend/ai_meeting.py†L182-L242】【F:frontend/src/services/api.js†L17-L37】
+- `meeting_live.jsonl`：1 行 1 発言の JSON Lines。フロントエンドのタイムラインが参照します。【F:backend/ai_meeting/logging.py†L14-L107】【F:frontend/src/services/api.js†L17-L37】
 - `meeting_live.md`：人が読みやすい Markdown ログ。
-- `meeting_result.json`：会議設定・最終合意案・発言履歴をまとめた JSON。【F:backend/ai_meeting.py†L1052-L1087】
-- `phases.jsonl` / `thoughts.jsonl`：フェーズ推定や思考ログ (デバッグ用)。
-- `metrics.csv` / `metrics_cpu_mem.png` / `metrics_gpu.png`：CPU/GPU の稼働状況を記録したファイル。【F:backend/ai_meeting.py†L325-L408】
+- `meeting_result.json`：会議設定・最終合意案・発言履歴をまとめた JSON。【F:backend/ai_meeting/meeting.py†L542-L558】
+- `phases.jsonl` / `thoughts.jsonl`：フェーズ推定や思考ログ (デバッグ用)。【F:backend/ai_meeting/logging.py†L23-L77】【F:backend/ai_meeting/meeting.py†L297-L437】
+- `metrics.csv` / `metrics_cpu_mem.png` / `metrics_gpu.png`：CPU/GPU の稼働状況を記録したファイル。【F:backend/ai_meeting/metrics.py†L17-L148】
 
 ## フロントエンドのセットアップとプレビュー
 1. Node.js 18 以上を用意し、依存関係をインストールします。
