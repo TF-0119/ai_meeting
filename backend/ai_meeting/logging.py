@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, Optional
@@ -62,11 +63,15 @@ class LiveLogWriter:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             f.flush()
 
-    def append_phase(self, payload: Dict):
+    def append_phase(self, payload):
         """フェーズ検知の結果を JSONL に追記する。"""
 
+        if is_dataclass(payload):
+            record = asdict(payload)
+        else:
+            record = dict(payload)
         with self.phase_log.open("a", encoding="utf-8", newline="") as f:
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
             f.flush()
 
     def append_thoughts(self, payload: Dict):

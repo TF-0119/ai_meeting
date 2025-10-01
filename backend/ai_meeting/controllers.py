@@ -4,9 +4,27 @@ from __future__ import annotations
 import random
 import re
 import typing
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from .config import MeetingConfig, Turn
+
+
+@dataclass
+class PhaseEvent:
+    """フェーズ検知の状態遷移を表現するイベント。"""
+
+    phase_id: Optional[int]
+    start_turn: int
+    end_turn: int
+    status: str
+    confidence: float
+    summary: str
+    reason: Optional[str] = None
+    cohesion: Optional[float] = None
+    unresolved_drop: Optional[float] = None
+    loop_streak: Optional[int] = None
+    shock_used: Optional[str] = None
 
 
 class Monitor:
@@ -16,8 +34,13 @@ class Monitor:
         self.cfg = cfg
         self._last_turn_idx = 0
         self._loop_streak = 0
+        self._current_event: Optional[PhaseEvent] = None
+        self._candidate_hits = 0
+        self._confirm_required = 2
 
-    def observe(self, history: List[Turn], unresolved_hist: List[int], window: int) -> Optional[Dict]:
+    def observe(
+        self, history: List[Turn], unresolved_hist: List[int], window: int
+    ) -> Optional[PhaseEvent]:
         if len(history) - self._last_turn_idx < 1:
             return None
         self._last_turn_idx = len(history)
@@ -50,17 +73,74 @@ class Monitor:
         elif cohesion >= self.cfg.phase_cohesion_min and unresolved_drop >= self.cfg.phase_unresolved_drop:
             reason = "cohesion_unresolved"
         if not reason:
+            if not self._current_event:
+                return None
+            if self._current_event.status == "confirmed":
+                self._current_event.status = "closed"
+                event = self._current_event
+                self._current_event = None
+                self._candidate_hits = 0
+                return event
+            self._current_event = None
+            self._candidate_hits = 0
             return None
+
+        start_turn = len(history) - W + 1
+        end_turn = len(history)
         summary = self._summarize_phase(recent)
-        return {
-            "start_turn": len(history) - W + 1,
-            "end_turn": len(history),
-            "cohesion": round(cohesion, 3),
-            "unresolved_drop": round(unresolved_drop, 3),
-            "loop_streak": self._loop_streak,
-            "reason": reason,
-            "summary": summary,
-        }
+        confidence = self._estimate_confidence(reason, cohesion, unresolved_drop)
+
+        if not self._current_event:
+            self._candidate_hits = 1
+            self._current_event = PhaseEvent(
+                phase_id=None,
+                start_turn=start_turn,
+                end_turn=end_turn,
+                status="candidate",
+                confidence=round(confidence, 3),
+                summary=summary,
+                reason=reason,
+                cohesion=round(cohesion, 3),
+                unresolved_drop=round(unresolved_drop, 3),
+                loop_streak=self._loop_streak,
+            )
+            return self._current_event
+
+        # すでに候補/確定済みのイベントが進行中
+        self._current_event.start_turn = min(self._current_event.start_turn, start_turn)
+        self._current_event.end_turn = end_turn
+        self._current_event.summary = summary
+        self._current_event.reason = reason
+        self._current_event.cohesion = round(cohesion, 3)
+        self._current_event.unresolved_drop = round(unresolved_drop, 3)
+        self._current_event.loop_streak = self._loop_streak
+        self._current_event.confidence = round(confidence, 3)
+
+        if self._current_event.status == "candidate":
+            self._candidate_hits += 1
+            if self._candidate_hits >= self._confirm_required:
+                self._current_event.status = "confirmed"
+                return self._current_event
+            return None
+
+        # confirmed 状態のまま継続中
+        return None
+
+    def _estimate_confidence(
+        self, reason: Optional[str], cohesion: float, unresolved_drop: float
+    ) -> float:
+        """簡易的な信頼度スコアを算出する。"""
+
+        if reason == "loop":
+            over = max(0, self._loop_streak - self.cfg.phase_loop_threshold + 1)
+            base = 0.55 + 0.1 * over
+        else:
+            coh_span = max(1e-6, 1.0 - self.cfg.phase_cohesion_min)
+            coh_score = max(0.0, (cohesion - self.cfg.phase_cohesion_min) / coh_span)
+            unresolved_req = max(1e-6, self.cfg.phase_unresolved_drop)
+            drop_score = max(0.0, unresolved_drop / unresolved_req)
+            base = 0.45 + 0.3 * min(1.0, coh_score) + 0.25 * min(1.0, drop_score)
+        return max(0.0, min(1.0, base))
 
     def _summarize_phase(self, turns: List[Turn]) -> str:
         texts = [t.content for t in turns]
