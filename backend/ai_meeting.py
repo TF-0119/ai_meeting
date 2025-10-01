@@ -1,7 +1,13 @@
 """旧 `backend.ai_meeting` モジュールの互換ラッパー。"""
 from __future__ import annotations
 
+import sys
 import warnings
+from pathlib import Path
+
+# スクリプト直接実行時にリポジトリルートを import パスへ追加する。
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from backend.ai_meeting.cli import build_agents, main, parse_args
 from backend.ai_meeting.config import AgentConfig, MeetingConfig, Turn
@@ -23,3 +29,7 @@ __all__ = [
     "build_agents",
     "main",
 ]
+
+
+if __name__ == "__main__":
+    main()
