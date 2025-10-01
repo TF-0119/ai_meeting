@@ -40,6 +40,7 @@ class MeetingConfig(BaseModel):
     ollama_url: Optional[str] = None
     max_tokens: int = 800
     resolve_round: bool = True  # 最後に「残課題消化ラウンド」を自動挿入
+    phase_turn_limit: Optional[Union[int, Dict[str, int]]] = None  # フェーズ内ターン上限
     # --- 短文チャット（既定ON） ---
     chat_mode: bool = True
     chat_max_sentences: int = 2
@@ -84,3 +85,15 @@ class MeetingConfig(BaseModel):
         temperature = clamp(1.1 - (p / 10) * 0.8, 0.2, 1.0)  # p↑で温度↓
         critique_passes = clamp(int(round((p / 10) * 2)), 0, 2)  # 0~2回
         return {"temperature": temperature, "critique_passes": critique_passes}
+
+    def get_phase_turn_limit(self, kind: str = "discussion") -> Optional[int]:
+        """フェーズ種別に応じてターン上限を決定する。"""
+
+        value = self.phase_turn_limit
+        if isinstance(value, dict):
+            candidate = value.get(kind, value.get("default"))
+            if isinstance(candidate, int) and candidate > 0:
+                return candidate
+        elif isinstance(value, int) and value > 0:
+            return value
+        return self.rounds if self.rounds > 0 else None

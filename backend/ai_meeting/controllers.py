@@ -25,6 +25,7 @@ class PhaseEvent:
     unresolved_drop: Optional[float] = None
     loop_streak: Optional[int] = None
     shock_used: Optional[str] = None
+    kind: Optional[str] = None
 
 
 class Monitor:
@@ -223,6 +224,11 @@ class KPIFeedback:
         actions["hint"] = " / ".join(hints)
         actions["tune"] = tune
         return actions
+
+    def reset(self) -> None:
+        """フェーズ境界で内部状態をリセットする。"""
+
+        self._last_hint = None
 
     @staticmethod
     def _token_set(text: str) -> set:

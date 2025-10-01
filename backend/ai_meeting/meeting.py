@@ -51,6 +51,7 @@ class Meeting:
         self._phase_id = 0
         self._unresolved_history: List[int] = []
         self._phases: List[PhaseState] = []
+        self._legacy_round_offset: int = 0
         self._phase_state = self._begin_phase(
             PhaseEvent(
                 phase_id=0,
@@ -59,6 +60,7 @@ class Meeting:
                 status="confirmed",
                 confidence=1.0,
                 summary="フェーズ0（初期化）",
+                kind="discussion",
             )
         )
         # Step5: ショック管理を有効化
@@ -82,8 +84,15 @@ class Meeting:
         """フェーズを開始し、現在の状態として保持する。"""
 
         phase_id = event.phase_id if event.phase_id is not None else self._phase_id
-        state = PhaseState(id=phase_id, start_turn=event.start_turn)
-        state.status = event.status
+        kind = event.kind or (self._phase_state.kind if self._phase_state else "discussion")
+        state = PhaseState(
+            id=phase_id,
+            start_turn=event.start_turn,
+            status=event.status,
+            kind=kind,
+            turn_limit=self.cfg.get_phase_turn_limit(kind),
+            legacy_round_base=self._legacy_round_offset,
+        )
         self._phase_state = state
         self._phase_id = phase_id
         return state
@@ -99,21 +108,16 @@ class Meeting:
             start_turn=self._phase_state.start_turn,
             turn_indices=list(self._phase_state.turn_indices),
             unresolved_counts=list(self._phase_state.unresolved_counts),
-            status="closed",
+            status=event.status,
+            turn_limit=self._phase_state.turn_limit,
+            turn_count=self._phase_state.turn_count,
+            kind=self._phase_state.kind,
+            legacy_round_base=self._phase_state.legacy_round_base,
         )
+        self._phase_state = None
+        self._phase_id = phase_id
         self._phases.append(closed_state)
-        next_id = phase_id + 1
-        next_start = event.end_turn + 1 if event.end_turn else len(self.history) + 1
-        self._begin_phase(
-            PhaseEvent(
-                phase_id=next_id,
-                start_turn=next_start,
-                end_turn=next_start - 1,
-                status="open",
-                confidence=0.0,
-                summary="",
-            )
-        )
+        self._legacy_round_offset = closed_state.legacy_round_base + closed_state.turn_count
         return closed_state
 
     def _phase_payload(self, event: PhaseEvent, state: Optional[PhaseState]) -> Dict:
@@ -126,6 +130,68 @@ class Meeting:
         if state:
             payload["phase"] = asdict(state)
         return payload
+
+    def _phase_round_index(self, state: PhaseState, phase_turn: int) -> int:
+        """フェーズ情報から互換ラウンド番号を算出する。"""
+
+        return state.legacy_round_base + phase_turn
+
+    def _reset_phase_controls(self) -> None:
+        """フェーズ切り替え時にショック/KPI制御をリセットする。"""
+
+        if self._shock_engine:
+            self._shock_hint = None
+            self._shock_ttl = 0
+        self._ctrl_hint = None
+        self._ctrl_ttl = 0
+        self._ctrl.reset()
+
+    def _handle_phase_event(self, event: PhaseEvent) -> None:
+        """監視AIのフェーズイベントを処理する。"""
+
+        state = self._phase_state
+        if state:
+            if event.phase_id is None:
+                event.phase_id = state.id
+            if event.kind is None:
+                event.kind = state.kind
+            state.start_turn = min(state.start_turn, event.start_turn)
+        if event.status == "candidate":
+            if state:
+                state.status = "candidate"
+            self.logger.append_phase(self._phase_payload(event, state))
+            return
+        if event.status == "confirmed":
+            if state:
+                state.status = "confirmed"
+            if self._shock_engine:
+                if self._shock_engine.mode == "explore":
+                    self.cfg.select_temp = clamp(self.cfg.select_temp + 0.2, 0.7, 1.5)
+                    self.cfg.sim_penalty = clamp(self.cfg.sim_penalty - 0.1, 0.0, 0.6)
+                    self.cfg.cooldown = clamp(self.cfg.cooldown - 0.05, 0.0, 0.35)
+                elif self._shock_engine.mode == "exploit":
+                    self.cfg.select_temp = clamp(self.cfg.select_temp - 0.2, 0.5, 1.5)
+                    self.cfg.sim_penalty = clamp(self.cfg.sim_penalty + 0.1, 0.0, 0.6)
+                    self.cfg.cooldown = clamp(self.cfg.cooldown + 0.05, 0.0, 0.35)
+                event.shock_used = self._shock_engine.mode
+            self.logger.append_phase(self._phase_payload(event, state))
+            return
+        if event.status == "closed":
+            closed_state = self._end_phase(event)
+            self.logger.append_phase(self._phase_payload(event, closed_state))
+            next_kind = event.kind or (closed_state.kind if closed_state else "discussion")
+            next_event = PhaseEvent(
+                phase_id=(closed_state.id + 1) if closed_state else (self._phase_id + 1),
+                start_turn=len(self.history) + 1,
+                end_turn=len(self.history),
+                status="open",
+                confidence=0.0,
+                summary="",
+                kind=next_kind,
+            )
+            new_state = self._begin_phase(next_event)
+            self._reset_phase_controls()
+            self.logger.append_phase(self._phase_payload(next_event, new_state))
 
     # === 思考→審査→当選発言 用の補助 ===
     def _recent_context(self, n: int) -> str:
@@ -424,53 +490,60 @@ class Meeting:
         print(f"Agents: {[a.name for a in self.cfg.agents]}")
         print(f"Precision: {self.cfg.precision} (Temp={self.temperature:.2f}, CritiquePasses={self.critique_passes})")
         print(f"Rounds: {self.cfg.rounds}")
+        phase_limit = self.cfg.get_phase_turn_limit()
+        if phase_limit is not None:
+            print(f"Phase Turn Limit: {phase_limit}")
         print()
 
         last_summary = ""
         order = self.cfg.agents[:]  # 発言順
         global_turn = 0
-        for r in range(1, self.cfg.rounds + 1):
-            # UI最小化時は“Round”見出しを出さない
-            if not self.cfg.ui_minimal:
-                banner(f"Round {r}")
+        while self._phase_state and not self._phase_state.is_completed():
+            current_phase = self._phase_state
+            phase_turn = current_phase.turn_count + 1
+            round_idx = self._phase_round_index(current_phase, phase_turn)
 
-            # ★ 新フロー: 思考→審査→勝者発言
+            if not self.cfg.ui_minimal:
+                banner(f"Round {round_idx}")
+
             if self.cfg.think_mode:
-                # 1) 全員が非公開の思考
                 thoughts: Dict[str, str] = {ag.name: self._think(ag, last_summary) for ag in self.cfg.agents}
-                # 2) 均衡AIが審査→勝者
                 verdict = self._judge_thoughts(thoughts)
                 previous_speaker = self.history[-1].speaker if self.history else None
                 winner_name = self._resolve_winner(verdict, previous_speaker)
                 verdict["resolved_winner"] = winner_name
                 winner = next((a for a in self.cfg.agents if a.name == winner_name), self.cfg.agents[0])
-                # 3) 勝者が自分の思考だけで発言
                 content = self._speak_from_thought(winner, thoughts.get(winner.name, ""))
-                # 4) デバッグ出力（本文には出さない）
                 if self.cfg.think_debug:
                     self.logger.append_thoughts(
                         {
-                            "round": r,
+                            "round": round_idx,
                             "turn": len(self.history) + 1,
+                            "phase": {"id": current_phase.id, "turn": phase_turn},
                             "thoughts": thoughts,
                             "verdict": verdict,
                             "winner": winner.name,
                         }
                     )
-                # 5) ログへ
                 self.history.append(Turn(speaker=winner.name, content=content))
                 print(
                     f"{winner.name}: {content}\n"
                     if self.cfg.ui_minimal
                     else f"{winner.name}:\n{content}\n"
                 )
-
-                self.logger.append_turn(r, len(self.history), winner.name, content)
-                current_speaker = winner  # ← 後段のrevealチェック用
-                self._last_spoke[current_speaker.name] = global_turn  # Update _last_spoke with current_speaker
+                self.logger.append_turn(
+                    round_idx,
+                    len(self.history),
+                    winner.name,
+                    content,
+                    phase_id=current_phase.id,
+                    phase_turn=phase_turn,
+                    phase_kind=current_phase.kind,
+                    phase_base=current_phase.legacy_round_base,
+                )
+                current_speaker = winner
+                self._last_spoke[current_speaker.name] = global_turn
             else:
-                # 旧フロー
-                # 発言権を持つのは order[0]
                 speaker = order[0]
                 req = self._agent_prompt(speaker, last_summary)
                 content = self.backend.generate(req)
@@ -482,15 +555,22 @@ class Meeting:
                     content = tmp
                 self.history.append(Turn(speaker=speaker.name, content=content))
                 print(f"{speaker.name}: {content}\n")
-                self.logger.append_turn(r, len(self.history), speaker.name, content)
+                self.logger.append_turn(
+                    round_idx,
+                    len(self.history),
+                    speaker.name,
+                    content,
+                    phase_id=current_phase.id,
+                    phase_turn=phase_turn,
+                    phase_kind=current_phase.kind,
+                    phase_base=current_phase.legacy_round_base,
+                )
                 current_speaker = speaker
-                self._last_spoke[current_speaker.name] = global_turn  # Update _last_spoke with current_speaker
+                self._last_spoke[current_speaker.name] = global_turn
 
             global_turn += 1
 
-            # 内省スコア → 次話者決定
             if self.equilibrium_enabled:
-                # 直近文脈 + 各エージェントの system を与えて「誰が次に最も有益か」を一度で採点
                 recent = self._recent_context(self.cfg.chat_window)
                 roster = "\n".join([f"- {a.name}: {a.system[:120]}" for a in self.cfg.agents])
                 sys_eq = (
@@ -519,80 +599,47 @@ class Meeting:
                         except Exception:
                             base_scores[a.name] = 0.0
                 else:
-                    # フォールバック：全員フラット
                     base_scores = {a.name: 0.5 for a in self.cfg.agents}
-                # --- Step3: スコアの調整（クールダウン＆重複ペナルティ） ---
                 adj: Dict[str, float] = {}
                 sim_recent_text = self._concat_recent_text(self.cfg.sim_window)
                 sim_tokens_recent = self._token_set(sim_recent_text) if sim_recent_text else set()
                 for ag in self.cfg.agents:
                     s = base_scores.get(ag.name, 0.0)
-                    # クールダウン（直近発言者, または span 以内）
                     if ag.name in self._last_spoke:
                         ago = global_turn - self._last_spoke[ag.name]
                         if 0 <= ago <= self.cfg.cooldown_span:
                             s -= self.cfg.cooldown
-                    # 重複ペナルティ（提案が直近と似すぎなら下げる）
                     if sim_tokens_recent:
                         sim = self._similarity_tokens(self._token_set(content), sim_tokens_recent)
                         s -= self.cfg.sim_penalty * sim
                     adj[ag.name] = s
-                # 上位Kからソフトマックス抽選
                 top = sorted(adj.items(), key=lambda kv: kv[1], reverse=True)[: max(1, self.cfg.topk)]
                 winner = self._softmax_pick(top, self.cfg.select_temp)
                 order.sort(key=lambda a: 0 if a.name == winner else 1)
             else:
-                # 1ラウンド1発言のローテーション
                 order = order[1:] + order[:1]
 
             last_summary = self._dedupe_bullets(self._summarize_round(self.history[-1]))
-            self.logger.append_summary(r, last_summary)
-            # 未解決トラッカー更新（Step2以前からの _pending を流用）
-            if hasattr(self, "_pending"):
-                self._pending.add_from_text(last_summary)
-                self._unresolved_history.append(len(self._pending.items))
-                if self._phase_state:
-                    self._phase_state.unresolved_counts.append(len(self._pending.items))
-                    self._phase_state.turn_indices.append(len(self.history))
-                if len(self._unresolved_history) > max(4, self.cfg.phase_window):
-                    self._unresolved_history = self._unresolved_history[-self.cfg.phase_window :]
+            self.logger.append_summary(
+                round_idx,
+                last_summary,
+                phase_id=current_phase.id,
+                phase_turn=phase_turn,
+                phase_kind=current_phase.kind,
+                phase_base=current_phase.legacy_round_base,
+            )
+            self._pending.add_from_text(last_summary)
+            unresolved_count = len(self._pending.items)
+            self._unresolved_history.append(unresolved_count)
+            if len(self._unresolved_history) > max(4, self.cfg.phase_window):
+                self._unresolved_history = self._unresolved_history[-self.cfg.phase_window :]
+            current_phase.register_turn(len(self.history), unresolved_count)
 
-            # Step 4: 監視AIが裏でフェーズ判定（ログのみ）
             if self._monitor:
-                event: Optional[PhaseEvent] = self._monitor.observe(
-                    self.history, self._unresolved_history, self.cfg.phase_window
-                )
+                event = self._monitor.observe(self.history, self._unresolved_history, self.cfg.phase_window)
                 if event:
-                    if event.phase_id is None and self._phase_state:
-                        event.phase_id = self._phase_state.id
-                    if self._phase_state:
-                        self._phase_state.start_turn = min(
-                            self._phase_state.start_turn, event.start_turn
-                        )
-                    if event.status == "candidate":
-                        if self._phase_state:
-                            self._phase_state.status = "candidate"
-                        self.logger.append_phase(self._phase_payload(event, self._phase_state))
-                    elif event.status == "confirmed":
-                        if self._phase_state:
-                            self._phase_state.status = "confirmed"
-                        if self._shock_engine:
-                            if self._shock_engine.mode == "explore":
-                                self.cfg.select_temp = clamp(self.cfg.select_temp + 0.2, 0.7, 1.5)
-                                self.cfg.sim_penalty = clamp(self.cfg.sim_penalty - 0.1, 0.0, 0.6)
-                                self.cfg.cooldown = clamp(self.cfg.cooldown - 0.05, 0.0, 0.35)
-                            elif self._shock_engine.mode == "exploit":
-                                self.cfg.select_temp = clamp(self.cfg.select_temp - 0.2, 0.5, 1.5)
-                                self.cfg.sim_penalty = clamp(self.cfg.sim_penalty + 0.1, 0.0, 0.6)
-                                self.cfg.cooldown = clamp(self.cfg.cooldown + 0.05, 0.0, 0.35)
-                            event.shock_used = self._shock_engine.mode
-                        self.logger.append_phase(self._phase_payload(event, self._phase_state))
-                    elif event.status == "closed":
-                        closed_state = self._end_phase(event)
-                        self.logger.append_phase(self._phase_payload(event, closed_state))
-                    # フェーズが変わっても “会議本文には何も挿入しない”（参加AIは気づかない）
+                    self._handle_phase_event(event)
 
-            # 発言者がどちらの経路でも安全に参照できるよう current_speaker を使う
             if getattr(current_speaker, "reveal_think", False):
                 print(textwrap.indent(f"(思考ログ/自己検証)\n{last_summary}", prefix="    "))  # 簡易版
             # ショックの寿命（ターン末にデクリメント）
@@ -634,31 +681,23 @@ class Meeting:
             if not self._test_mode:
                 time.sleep(0.2)
 
+        if self._phase_state and self._phase_state.status != "closed":
+            closing_event = PhaseEvent(
+                phase_id=self._phase_state.id,
+                start_turn=self._phase_state.start_turn,
+                end_turn=len(self.history),
+                status="closed",
+                confidence=1.0,
+                summary="フェーズ終了（ターン上限）",
+                kind=self._phase_state.kind,
+            )
+            closed_state = self._end_phase(closing_event)
+            self.logger.append_phase(self._phase_payload(closing_event, closed_state))
+
         # --- 残課題消化ラウンド（任意） ---
         if self.cfg.resolve_round and self._pending.items:
             banner("Resolution Round / 残課題の消化")
-            # 残課題の要約をプロンプトに渡す
-            pending_text = "- " + "\n- ".join(sorted(self._pending.items))
-            for agent in order:
-                # 残課題を解消する指示を追加
-                extra = (
-                    f"\n\n【残課題（要解消）】\n{pending_text}\n\n"
-                    f"あなたの視点で、上記の残課題を具体的に解消してください。必ず日本語で、実行可能な手順・責任分担・期限を含めてください。"
-                )
-                req = self._agent_prompt(agent, last_summary)  # 直前の要約も参照
-                req.messages.append({"role": "user", "content": extra})
-                content = self.backend.generate(req)
-                content = self._enforce_chat_constraints(content)
-                # クリティカルな役割で軽く自省
-                if self.critique_passes > 0:
-                    content = self._critic_pass(content)
-                self.history.append(Turn(speaker=agent.name, content=content))
-                print(f"{agent.name}:\n{content}\n")
-                self.logger.append_turn(self.cfg.rounds + 1, len(self.history), agent.name, content)
-                last_summary = self._dedupe_bullets(self._summarize_round(self.history[-1]))
-                self.logger.append_summary(self.cfg.rounds + 1, last_summary)
-            # 解消したのでペンディングをクリア
-            self._pending.clear()
+            last_summary, global_turn = self._run_resolution_phase(order, last_summary, global_turn)
 
         # 最終統合（Finisherがいない場合は内蔵フィニッシャ）
         final_req_system = (
@@ -727,6 +766,7 @@ class Meeting:
                     "topic": self.cfg.topic,
                     "precision": self.cfg.precision,
                     "rounds": self.cfg.rounds,
+                    "phase_turn_limit": self.cfg.get_phase_turn_limit(),
                     "resolve_round": self.cfg.resolve_round,
                     "agents": [a.model_dump() for a in self.cfg.agents],
                     "turns": [t.__dict__ for t in self.history],
@@ -748,6 +788,89 @@ class Meeting:
             traceback.print_exc()
 
     # ---- Step3 helpers ----
+    def _run_resolution_phase(
+        self,
+        order: List[AgentConfig],
+        last_summary: str,
+        global_turn: int,
+    ) -> Tuple[str, int]:
+        """残課題消化フェーズを進行させる。"""
+
+        event = PhaseEvent(
+            phase_id=self._phase_id + 1,
+            start_turn=len(self.history) + 1,
+            end_turn=len(self.history),
+            status="open",
+            confidence=1.0,
+            summary="残課題消化フェーズ開始",
+            kind="resolution",
+        )
+        state = self._begin_phase(event)
+        self._reset_phase_controls()
+        self.logger.append_phase(self._phase_payload(event, state))
+
+        pending_text = "- " + "\n- ".join(sorted(self._pending.items))
+        for agent in order:
+            extra = (
+                f"\n\n【残課題（要解消）】\n{pending_text}\n\n"
+                f"あなたの視点で、上記の残課題を具体的に解消してください。必ず日本語で、実行可能な手順・責任分担・期限を含めてください。"
+            )
+            req = self._agent_prompt(agent, last_summary)
+            req.messages.append({"role": "user", "content": extra})
+            content = self.backend.generate(req)
+            content = self._enforce_chat_constraints(content)
+            if self.critique_passes > 0:
+                content = self._critic_pass(content)
+            self.history.append(Turn(speaker=agent.name, content=content))
+            print(f"{agent.name}:\n{content}\n")
+
+            phase_turn = state.turn_count + 1
+            round_idx = self._phase_round_index(state, phase_turn)
+            self.logger.append_turn(
+                round_idx,
+                len(self.history),
+                agent.name,
+                content,
+                phase_id=state.id,
+                phase_turn=phase_turn,
+                phase_kind=state.kind,
+                phase_base=state.legacy_round_base,
+            )
+            last_summary = self._dedupe_bullets(self._summarize_round(self.history[-1]))
+            self.logger.append_summary(
+                round_idx,
+                last_summary,
+                phase_id=state.id,
+                phase_turn=phase_turn,
+                phase_kind=state.kind,
+                phase_base=state.legacy_round_base,
+            )
+            unresolved_count = len(self._pending.items)
+            self._unresolved_history.append(unresolved_count)
+            if len(self._unresolved_history) > max(4, self.cfg.phase_window):
+                self._unresolved_history = self._unresolved_history[-self.cfg.phase_window :]
+            state.register_turn(len(self.history), unresolved_count)
+            self._last_spoke[agent.name] = global_turn
+            global_turn += 1
+
+        self._pending.clear()
+        self._unresolved_history.append(len(self._pending.items))
+        if len(self._unresolved_history) > max(4, self.cfg.phase_window):
+            self._unresolved_history = self._unresolved_history[-self.cfg.phase_window :]
+
+        closing_event = PhaseEvent(
+            phase_id=state.id,
+            start_turn=state.start_turn,
+            end_turn=len(self.history),
+            status="closed",
+            confidence=1.0,
+            summary="残課題消化フェーズ終了",
+            kind=state.kind,
+        )
+        closed_state = self._end_phase(closing_event)
+        self.logger.append_phase(self._phase_payload(closing_event, closed_state))
+        return last_summary, global_turn
+
     def _concat_recent_text(self, window: int) -> str:
         if window <= 0 or not self.history:
             return ""
