@@ -101,7 +101,10 @@ export default function Meeting() {
     { key: "spec_coverage", label: "Spec Coverage" },
   ]), []);
 
-  const toResult = () => nav(`/result/${meetingId}`);
+  const toResult = () => {
+    const encodedMeetingId = encodeURIComponent(meetingId);
+    nav(`/result/${encodedMeetingId}`);
+  };
 
   return (
     <section className="grid-2">
