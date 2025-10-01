@@ -9,7 +9,7 @@
 
 ## 現状の公開構成
 
-2024 年時点で `backend/ai_meeting/` パッケージは以下のモジュールに整理済みです。
+2025 年 10 月 02 日時点で `backend/ai_meeting/` パッケージは以下のモジュールに整理済みです。
 
 ```text
 backend/ai_meeting/
