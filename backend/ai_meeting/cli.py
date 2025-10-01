@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import argparse
 import os
-from typing import List
+import warnings
+from typing import Dict, List, Optional, Union
 
 from backend.defaults import DEFAULT_AGENT_NAMES
 
@@ -24,7 +25,27 @@ def parse_args() -> argparse.Namespace:
         default=list(DEFAULT_AGENT_NAMES),
         help="参加者を列挙。'名前=systemプロンプト' 形式もOK（例: Alice='仕様を詰める' Bob='実装に落とす'）",
     )
-    ap.add_argument("--rounds", type=int, default=4)
+    ap.add_argument(
+        "--rounds",
+        type=int,
+        default=None,
+        help="非推奨: phase_turn_limit の全体値として解釈されます",
+    )
+    ap.add_argument("--max-phases", type=int, default=None, help="フェーズ総数の上限")
+    ap.add_argument(
+        "--phase-turn-limit",
+        action="append",
+        default=[],
+        metavar="VALUE",
+        help="フェーズターン上限。整数または kind=数値 形式を複数指定",
+    )
+    ap.add_argument(
+        "--phase-goal",
+        action="append",
+        default=[],
+        metavar="TEXT",
+        help="フェーズ目標。'kind=説明' 形式または単一文字列で共通設定",
+    )
     ap.add_argument("--backend", choices=["openai", "ollama"], default="ollama")
     ap.add_argument("--openai-model", default=None)
     ap.add_argument("--ollama-model", default=None)
@@ -113,15 +134,83 @@ def build_agents(tokens: List[str]) -> List[AgentConfig]:
     return agents
 
 
+def _parse_phase_turn_limit(tokens: List[str]) -> Optional[Union[int, Dict[str, int]]]:
+    """フェーズ上限の指定文字列を解析する。"""
+
+    if not tokens:
+        return None
+    scalar: Optional[int] = None
+    mapping: Dict[str, int] = {}
+    for raw in tokens:
+        token = raw.strip()
+        if not token:
+            continue
+        if "=" in token:
+            key, value = token.split("=", 1)
+            key = key.strip()
+            try:
+                mapping[key] = max(0, int(value.strip()))
+            except ValueError as exc:  # noqa: PERF203 - わかりやすいエラーメッセージ優先
+                raise ValueError(f"phase-turn-limit の値が数値ではありません: {token}") from exc
+        else:
+            try:
+                scalar = max(0, int(token))
+            except ValueError as exc:  # noqa: PERF203
+                raise ValueError(f"phase-turn-limit の値が数値ではありません: {token}") from exc
+    if mapping:
+        if scalar is not None:
+            mapping.setdefault("default", scalar)
+        return mapping
+    return scalar
+
+
+def _parse_phase_goal(tokens: List[str]) -> Optional[Union[str, Dict[str, str]]]:
+    """フェーズ目標を解析し、文字列または辞書へ変換する。"""
+
+    if not tokens:
+        return None
+    mapping: Dict[str, str] = {}
+    default_text: Optional[str] = None
+    for raw in tokens:
+        token = raw.strip()
+        if not token:
+            continue
+        if "=" in token:
+            key, value = token.split("=", 1)
+            mapping[key.strip()] = value.strip()
+        else:
+            default_text = token
+    if mapping:
+        if default_text:
+            mapping.setdefault("default", default_text)
+        return mapping
+    return default_text
+
+
 def main() -> None:
     """CLI エントリーポイント。"""
 
     args = parse_args()
     agents = build_agents(args.agents)
+    try:
+        phase_limit = _parse_phase_turn_limit(getattr(args, "phase_turn_limit", []))
+    except ValueError as exc:
+        raise SystemExit(str(exc))
+    phase_goal = _parse_phase_goal(getattr(args, "phase_goal", []))
+
+    rounds_value = getattr(args, "rounds", None)
+    if rounds_value is not None:
+        warnings.warn("--rounds は非推奨です。phase_turn_limit に読み替えます。", DeprecationWarning)
+        if phase_limit is None:
+            phase_limit = max(0, int(rounds_value))
+
     cfg = MeetingConfig(
         topic=args.topic,
         precision=clamp(args.precision, 1, 10),
-        rounds=args.rounds,
+        rounds=rounds_value,
+        max_phases=args.max_phases,
+        phase_turn_limit=phase_limit,
+        phase_goal=phase_goal,
         agents=agents,
         backend_name=args.backend,
         openai_model=args.openai_model or os.getenv("OPENAI_MODEL"),

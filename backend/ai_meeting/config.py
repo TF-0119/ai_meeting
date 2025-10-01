@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -32,7 +32,23 @@ class MeetingConfig(BaseModel):
 
     topic: str = Field(..., description="会議テーマ（1文）")
     precision: int = Field(5, ge=1, le=10, description="精密性(1=発散, 10=厳密)")
-    rounds: int = 4
+    rounds: Optional[int] = Field(
+        None,
+        ge=0,
+        description="非推奨: フェーズ内ターン上限（phase_turn_limit）のエイリアス",
+    )
+    max_phases: Optional[int] = Field(
+        None,
+        ge=1,
+        description="全体で許容するフェーズ数の上限。Noneなら制限なし",
+    )
+    phase_turn_limit: Optional[Union[int, Dict[str, int]]] = Field(
+        4,
+        description="各フェーズのターン数上限（intで共通・dictで種類別）",
+    )
+    phase_goal: Optional[Union[str, Dict[str, str]]] = Field(
+        None, description="フェーズごとの目的（'discussion=議題整理' のように指定）"
+    )
     agents: List[AgentConfig]
     backend_name: Literal["openai", "ollama"] = "ollama"
     openai_model: Optional[str] = None
@@ -40,7 +56,6 @@ class MeetingConfig(BaseModel):
     ollama_url: Optional[str] = None
     max_tokens: int = 800
     resolve_round: bool = True  # 最後に「残課題消化ラウンド」を自動挿入
-    phase_turn_limit: Optional[Union[int, Dict[str, int]]] = None  # フェーズ内ターン上限
     # --- 短文チャット（既定ON） ---
     chat_mode: bool = True
     chat_max_sentences: int = 2
@@ -78,6 +93,42 @@ class MeetingConfig(BaseModel):
 
     outdir: Optional[str] = None  # ログ出力先。未指定なら自動で logs/<日時_トピック> を作成
 
+    model_config = {
+        "validate_assignment": True,
+    }
+
+    def model_post_init(self, __context: Any) -> None:  # noqa: D401 - BaseModel規約
+        """Pydantic初期化後にレガシーroundsフィールドを整合させる。"""
+
+        # rounds 指定だけで phase_turn_limit が未設定の場合は値を引き継ぐ
+        if (self.phase_turn_limit is None or self.phase_turn_limit == 0) and isinstance(
+            self.rounds, int
+        ):
+            self.phase_turn_limit = self.rounds
+
+        # phase_turn_limit が整数なら rounds へミラーリング（互換用途）
+        if isinstance(self.phase_turn_limit, int):
+            if self.phase_turn_limit < 0:
+                self.phase_turn_limit = max(0, self.phase_turn_limit)
+            self.rounds = max(0, self.phase_turn_limit)
+            return
+
+        # dict指定の場合は discussion/default を優先して rounds を埋める
+        if isinstance(self.phase_turn_limit, dict):
+            for key in ("discussion", "default"):
+                value = self.phase_turn_limit.get(key)
+                if isinstance(value, int) and value > 0:
+                    self.rounds = value
+                    break
+            else:
+                self.rounds = 0
+        else:
+            # phase_turn_limit も rounds も無効ならデフォルト4ラウンドとして扱う
+            if self.rounds is None:
+                self.rounds = 4
+            if self.phase_turn_limit is None:
+                self.phase_turn_limit = self.rounds
+
     def runtime_params(self) -> Dict[str, Union[float, int]]:
         """precision に応じた温度やクリティーク回数を算出する。"""
 
@@ -91,9 +142,30 @@ class MeetingConfig(BaseModel):
 
         value = self.phase_turn_limit
         if isinstance(value, dict):
-            candidate = value.get(kind, value.get("default"))
+            candidate = value.get(kind)
+            if candidate is None:
+                candidate = value.get("default")
+            if candidate is None:
+                candidate = value.get("discussion")
             if isinstance(candidate, int) and candidate > 0:
                 return candidate
         elif isinstance(value, int) and value > 0:
             return value
-        return self.rounds if self.rounds > 0 else None
+        if isinstance(self.rounds, int) and self.rounds > 0:
+            return self.rounds
+        return None
+
+    def get_phase_goal(self, kind: str = "discussion") -> Optional[str]:
+        """フェーズ種別に紐づく目標テキストを返す。"""
+
+        goal = self.phase_goal
+        if isinstance(goal, dict):
+            text = goal.get(kind)
+            if text is None:
+                text = goal.get("default")
+            if text is None:
+                text = goal.get("discussion")
+            return text
+        if isinstance(goal, str):
+            return goal
+        return None
