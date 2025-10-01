@@ -122,10 +122,22 @@ class Meeting:
         scores = j.get("scores")
         if not isinstance(scores, dict):
             scores = {}
+
+        def _normalize_name(value: object) -> str:
+            return str(value).strip().casefold() if value is not None else ""
+
+        name_lookup = {_normalize_name(n): n for n in names}
+
+        normalized_scores = {}
+        for key, rec in scores.items():
+            canonical = name_lookup.get(_normalize_name(key))
+            if canonical and canonical not in normalized_scores:
+                normalized_scores[canonical] = rec
+
         # 欠損を埋める＆scoreを正規化
         out_scores = {}
         for n in names:
-            rec = scores.get(n, {})
+            rec = normalized_scores.get(n, {})
             sc = float(rec.get("score", 0.0)) if isinstance(rec, dict) else 0.0
             out_scores[n] = {
                 "flow": float(rec.get("flow", 0.0)) if isinstance(rec, dict) else 0.0,
@@ -136,9 +148,20 @@ class Meeting:
                 "score": max(0.0, min(1.0, sc)),
                 "rationale": (rec.get("rationale") or "" if isinstance(rec, dict) else "")[:60],
             }
-        win = j.get("winner")
-        if win not in names:
-            win = max(out_scores.items(), key=lambda kv: kv[1]["score"])[0] if out_scores else names[0]
+        win_raw = j.get("winner")
+        win_norm = _normalize_name(win_raw)
+        if win_norm in name_lookup:
+            win = name_lookup[win_norm]
+        elif out_scores:
+            top_score = max(v["score"] for v in out_scores.values())
+            top_candidates = [
+                name
+                for name, record in out_scores.items()
+                if math.isclose(record["score"], top_score, rel_tol=1e-9, abs_tol=1e-9)
+            ]
+            win = random.choice(top_candidates if top_candidates else names)
+        else:
+            win = random.choice(names)
         return {"scores": out_scores, "winner": win}
 
     def _try_parse_json(self, raw: str):
