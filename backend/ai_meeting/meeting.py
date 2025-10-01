@@ -9,6 +9,7 @@ import re
 import textwrap
 import time
 import traceback
+from dataclasses import asdict
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -21,6 +22,7 @@ from .logging import LiveLogWriter
 from .metrics import MetricsLogger
 from .testing import NullMetricsLogger, is_test_mode, setup_test_environment
 from .utils import banner, clamp
+from .phase import PhaseState
 
 
 class Meeting:
@@ -48,6 +50,17 @@ class Meeting:
         self._monitor = Monitor(self.cfg) if self.cfg.monitor else None
         self._phase_id = 0
         self._unresolved_history: List[int] = []
+        self._phases: List[PhaseState] = []
+        self._phase_state = self._begin_phase(
+            PhaseEvent(
+                phase_id=0,
+                start_turn=1,
+                end_turn=0,
+                status="confirmed",
+                confidence=1.0,
+                summary="フェーズ0（初期化）",
+            )
+        )
         # Step5: ショック管理を有効化
         self._shock_engine = ShockEngine(self.cfg) if self.cfg.shock != "off" else None
         self._shock_hint: Optional[str] = None
@@ -64,6 +77,55 @@ class Meeting:
         else:
             self.metrics = MetricsLogger(self.logger.dir, interval=1.0)
         self.metrics.start()
+
+    def _begin_phase(self, event: PhaseEvent) -> PhaseState:
+        """フェーズを開始し、現在の状態として保持する。"""
+
+        phase_id = event.phase_id if event.phase_id is not None else self._phase_id
+        state = PhaseState(id=phase_id, start_turn=event.start_turn)
+        state.status = event.status
+        self._phase_state = state
+        self._phase_id = phase_id
+        return state
+
+    def _end_phase(self, event: PhaseEvent) -> PhaseState:
+        """現在のフェーズを終了し、履歴へ格納する。"""
+
+        if not self._phase_state:
+            raise RuntimeError("フェーズ状態が初期化されていません。")
+        phase_id = event.phase_id if event.phase_id is not None else self._phase_state.id
+        closed_state = PhaseState(
+            id=phase_id,
+            start_turn=self._phase_state.start_turn,
+            turn_indices=list(self._phase_state.turn_indices),
+            unresolved_counts=list(self._phase_state.unresolved_counts),
+            status="closed",
+        )
+        self._phases.append(closed_state)
+        next_id = phase_id + 1
+        next_start = event.end_turn + 1 if event.end_turn else len(self.history) + 1
+        self._begin_phase(
+            PhaseEvent(
+                phase_id=next_id,
+                start_turn=next_start,
+                end_turn=next_start - 1,
+                status="open",
+                confidence=0.0,
+                summary="",
+            )
+        )
+        return closed_state
+
+    def _phase_payload(self, event: PhaseEvent, state: Optional[PhaseState]) -> Dict:
+        """フェーズイベントのログ用ペイロードを生成する。"""
+
+        payload: Dict = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "event": asdict(event),
+        }
+        if state:
+            payload["phase"] = asdict(state)
+        return payload
 
     # === 思考→審査→当選発言 用の補助 ===
     def _recent_context(self, n: int) -> str:
@@ -489,6 +551,9 @@ class Meeting:
             if hasattr(self, "_pending"):
                 self._pending.add_from_text(last_summary)
                 self._unresolved_history.append(len(self._pending.items))
+                if self._phase_state:
+                    self._phase_state.unresolved_counts.append(len(self._pending.items))
+                    self._phase_state.turn_indices.append(len(self.history))
                 if len(self._unresolved_history) > max(4, self.cfg.phase_window):
                     self._unresolved_history = self._unresolved_history[-self.cfg.phase_window :]
 
@@ -498,9 +563,19 @@ class Meeting:
                     self.history, self._unresolved_history, self.cfg.phase_window
                 )
                 if event:
-                    if event.status == "confirmed":
-                        self._phase_id += 1
-                        event.phase_id = self._phase_id
+                    if event.phase_id is None and self._phase_state:
+                        event.phase_id = self._phase_state.id
+                    if self._phase_state:
+                        self._phase_state.start_turn = min(
+                            self._phase_state.start_turn, event.start_turn
+                        )
+                    if event.status == "candidate":
+                        if self._phase_state:
+                            self._phase_state.status = "candidate"
+                        self.logger.append_phase(self._phase_payload(event, self._phase_state))
+                    elif event.status == "confirmed":
+                        if self._phase_state:
+                            self._phase_state.status = "confirmed"
                         if self._shock_engine:
                             if self._shock_engine.mode == "explore":
                                 self.cfg.select_temp = clamp(self.cfg.select_temp + 0.2, 0.7, 1.5)
@@ -511,13 +586,10 @@ class Meeting:
                                 self.cfg.sim_penalty = clamp(self.cfg.sim_penalty + 0.1, 0.0, 0.6)
                                 self.cfg.cooldown = clamp(self.cfg.cooldown + 0.05, 0.0, 0.35)
                             event.shock_used = self._shock_engine.mode
-                        self.logger.append_phase(event)
-                    elif event.status == "candidate":
-                        self.logger.append_phase(event)
+                        self.logger.append_phase(self._phase_payload(event, self._phase_state))
                     elif event.status == "closed":
-                        if event.phase_id is None:
-                            event.phase_id = self._phase_id
-                        self.logger.append_phase(event)
+                        closed_state = self._end_phase(event)
+                        self.logger.append_phase(self._phase_payload(event, closed_state))
                     # フェーズが変わっても “会議本文には何も挿入しない”（参加AIは気づかない）
 
             # 発言者がどちらの経路でも安全に参照できるよう current_speaker を使う
