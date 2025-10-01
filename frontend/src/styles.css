@@ -30,6 +30,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,s
 .muted{color:var(--muted);font-size:13px;margin-top:2px}
 .hint{color:var(--muted);font-size:12px;margin-top:8px}
 .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.kpi-grid.inline{margin-top:12px}
 .kpi{background:#0d0e13;border:1px solid var(--border);border-radius:12px;padding:12px}
 .kpi-label{color:var(--muted);font-size:12px;margin-bottom:4px}
 .kpi-value{font-size:20px;font-weight:700}

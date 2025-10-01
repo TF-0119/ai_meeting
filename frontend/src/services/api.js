@@ -20,20 +20,71 @@ export async function fetchJSONL(url) {
     .filter(Boolean);
 }
 
+function parseLiveRows(rows) {
+  const timeline = [];
+  let latestSummary = "";
+  let latestFinal = "";
+
+  rows.forEach((r, i) => {
+    const type = (r.type ?? "").toLowerCase();
+    const inferredType = type
+      || (Object.prototype.hasOwnProperty.call(r, "summary") ? "summary"
+        : Object.prototype.hasOwnProperty.call(r, "final") ? "final"
+        : "turn");
+
+    if (inferredType === "summary") {
+      const summaryText = r.summary ?? r.text ?? r.message ?? r.content ?? "";
+      if (summaryText) {
+        latestSummary = summaryText;
+      }
+      return;
+    }
+
+    if (inferredType === "final") {
+      const finalText = r.final ?? r.text ?? r.message ?? r.content ?? "";
+      if (finalText) {
+        latestFinal = finalText;
+      }
+      return;
+    }
+
+    if (inferredType !== "turn") {
+      // 未知タイプはそのままスキップ
+      return;
+    }
+
+    timeline.push({
+      id: r.id ?? r.index ?? r.turn ?? i + 1,
+      speaker: r.speaker ?? r.role ?? r.agent ?? "unknown",
+      text: r.text ?? r.message ?? r.content ?? "",
+      ts: r.ts ?? r.time ?? r.timestamp ?? null,
+    });
+  });
+
+  return { timeline, latestSummary, latestFinal };
+}
+
 // meeting_live.jsonl → タイムライン配列に整形
 export async function getTimeline(meetingId) {
   const url = `/logs/${meetingId}/meeting_live.jsonl`;
   try {
     const rows = await fetchJSONL(url);
-    return rows.map((r, i) => ({
-      id: r.id ?? r.index ?? i + 1,
-      speaker: r.speaker ?? r.role ?? r.agent ?? "unknown",
-      text: r.text ?? r.message ?? r.content ?? "",
-      ts: r.ts ?? r.time ?? null,
-    }));
+    return parseLiveRows(rows).timeline;
   } catch (e) {
     // ファイル未生成・一時的な404は空扱い
     return [];
+  }
+}
+
+async function fetchOptionalJSON(url) {
+  try {
+    const res = await fetch(withCacheBuster(url), { cache: "no-store" });
+    if (!res.ok) return null;
+    const text = await res.text();
+    if (!text.trim()) return null;
+    return JSON.parse(text);
+  } catch (err) {
+    return null;
   }
 }
 
@@ -59,6 +110,48 @@ export async function getMeetingResult(meetingId) {
     final: payload.final ?? "",
     kpi,
     files,
+  };
+}
+
+export async function tryGetMeetingResult(meetingId) {
+  return fetchOptionalJSON(`/logs/${meetingId}/meeting_result.json`);
+}
+
+async function getKpi(meetingId) {
+  const data = await fetchOptionalJSON(`/logs/${meetingId}/kpi.json`);
+  if (!data || typeof data !== "object") return {};
+  return data;
+}
+
+export async function getLiveSnapshot(meetingId) {
+  const url = `/logs/${meetingId}/meeting_live.jsonl`;
+  let rows = [];
+  try {
+    rows = await fetchJSONL(url);
+  } catch (_) {
+    rows = [];
+  }
+
+  const { timeline, latestSummary, latestFinal } = parseLiveRows(rows);
+
+  const [kpi, result] = await Promise.all([
+    getKpi(meetingId),
+    tryGetMeetingResult(meetingId),
+  ]);
+
+  const progress = typeof kpi.progress === "number" ? kpi.progress : null;
+  const finalText = result?.final ?? latestFinal ?? "";
+  const summaryText = latestSummary || finalText || "";
+  const resultReady = Boolean(result && typeof result.final === "string" && result.final.trim().length > 0);
+
+  return {
+    timeline,
+    summary: summaryText,
+    kpi,
+    progress,
+    resultReady,
+    final: finalText,
+    topic: result?.topic ?? "",
   };
 }
 
