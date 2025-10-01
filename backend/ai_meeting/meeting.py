@@ -12,7 +12,7 @@ import traceback
 from dataclasses import asdict
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from .config import AgentConfig, MeetingConfig, Turn
 from .controllers import KPIFeedback, Monitor, PendingTracker, PhaseEvent, ShockEngine
@@ -128,13 +128,30 @@ class Meeting:
             "event": asdict(event),
         }
         if state:
-            payload["phase"] = asdict(state)
+            payload["phase"] = self._phase_state_to_dict(state)
         return payload
 
     def _phase_round_index(self, state: PhaseState, phase_turn: int) -> int:
         """フェーズ情報から互換ラウンド番号を算出する。"""
 
         return state.legacy_round_base + phase_turn
+
+    def _phase_state_to_dict(self, state: PhaseState) -> Dict[str, Any]:
+        """PhaseState を辞書化し、目標情報を付加する。"""
+
+        data = asdict(state)
+        goal = self.cfg.get_phase_goal(state.kind)
+        if goal:
+            data["goal"] = goal
+        return data
+
+    def _serialize_phases(self) -> List[Dict[str, Any]]:
+        """meeting_result.json 用にフェーズ進行のスナップショットを整形する。"""
+
+        records = [self._phase_state_to_dict(p) for p in self._phases]
+        if self._phase_state:
+            records.append(self._phase_state_to_dict(self._phase_state))
+        return records
 
     def _reset_phase_controls(self) -> None:
         """フェーズ切り替え時にショック/KPI制御をリセットする。"""
@@ -179,6 +196,8 @@ class Meeting:
         if event.status == "closed":
             closed_state = self._end_phase(event)
             self.logger.append_phase(self._phase_payload(event, closed_state))
+            if self.cfg.max_phases and len(self._phases) >= self.cfg.max_phases:
+                return
             next_kind = event.kind or (closed_state.kind if closed_state else "discussion")
             next_event = PhaseEvent(
                 phase_id=(closed_state.id + 1) if closed_state else (self._phase_id + 1),
@@ -489,16 +508,28 @@ class Meeting:
         print(f"Topic: {self.cfg.topic}")
         print(f"Agents: {[a.name for a in self.cfg.agents]}")
         print(f"Precision: {self.cfg.precision} (Temp={self.temperature:.2f}, CritiquePasses={self.critique_passes})")
-        print(f"Rounds: {self.cfg.rounds}")
+        print(f"Rounds (互換用): {self.cfg.rounds}")
         phase_limit = self.cfg.get_phase_turn_limit()
         if phase_limit is not None:
             print(f"Phase Turn Limit: {phase_limit}")
+        if isinstance(self.cfg.phase_turn_limit, dict):
+            print(f"Phase Turn Map: {self.cfg.phase_turn_limit}")
+        if self.cfg.max_phases:
+            print(f"Max Phases: {self.cfg.max_phases}")
+        goal_default = self.cfg.get_phase_goal()
+        if goal_default:
+            print(f"Phase Goal (default): {goal_default}")
         print()
 
         last_summary = ""
         order = self.cfg.agents[:]  # 発言順
         global_turn = 0
-        if self.cfg.rounds <= 0:
+        if phase_limit is not None and phase_limit <= 0:
+            print("Phase Turn Limit が0以下のため、会議を開始せず終了します。")
+            self.metrics.stop()
+            return
+        if phase_limit is None:
+            print("Phase Turn Limit が設定されていないため、会議を開始せず終了します。")
             self.metrics.stop()
             return
         while self._phase_state and not self._phase_state.is_completed():
@@ -769,10 +800,13 @@ class Meeting:
                     "topic": self.cfg.topic,
                     "precision": self.cfg.precision,
                     "rounds": self.cfg.rounds,
-                    "phase_turn_limit": self.cfg.get_phase_turn_limit(),
+                    "phase_turn_limit": self.cfg.phase_turn_limit,
+                    "max_phases": self.cfg.max_phases,
+                    "phase_goal": self.cfg.phase_goal,
                     "resolve_round": self.cfg.resolve_round,
                     "agents": [a.model_dump() for a in self.cfg.agents],
                     "turns": [t.__dict__ for t in self.history],
+                    "phases": self._serialize_phases(),
                     "final": final,
                     "kpi": kpi_result or {},
                     "files": files,

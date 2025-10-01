@@ -58,6 +58,8 @@
     "precision": 6,
     "rounds": 2,
     "phase_turn_limit": 2,
+    "max_phases": null,
+    "phase_goal": null,
     "resolve_round": true,
     "agents": [
       {
@@ -83,6 +85,25 @@
         "speaker": "Bob",
         "content": "Bobが決定事項を共有。Bob視点: 空間を活かす案を検証する。担当:Bob 期限:今週末",
         "meta": {}
+      }
+    ],
+    "phases": [
+      {
+        "id": 0,
+        "start_turn": 1,
+        "turn_indices": [
+          1,
+          2
+        ],
+        "unresolved_counts": [
+          0,
+          0
+        ],
+        "status": "closed",
+        "turn_limit": 2,
+        "turn_count": 2,
+        "kind": "discussion",
+        "legacy_round_base": 0
       }
     ],
     "final": "合意事項:\n- 空間を活かす新スポーツを実証する\n- 用具の安全確保と得点管理を両立\n残課題:\n- 動作手順の動画化で理解を補強\n直近アクション:\n- 担当:Alice が安全テストを実施 (期限:来週)\n- 担当:Bob がKPI測定を設計 (期限:来月)",
