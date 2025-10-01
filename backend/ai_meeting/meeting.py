@@ -182,7 +182,8 @@ class Meeting:
         if isinstance(requested, str) and requested in agent_names and requested != previous:
             return requested
 
-        scores: Dict[str, Dict[str, float]] = verdict.get("scores") if isinstance(verdict, dict) else {}
+        raw_scores = verdict.get("scores") if isinstance(verdict, dict) else {}
+        scores: Dict[str, Dict[str, float]] = raw_scores if isinstance(raw_scores, dict) else {}
         candidates: List[Tuple[str, float]] = []
         for name in agent_names:
             if name == previous:
@@ -193,7 +194,7 @@ class Meeting:
                 if isinstance(record, dict):
                     raw_score = record.get("score")
                     try:
-                        score = float(raw_score)
+                        score = float(raw_score) if raw_score is not None else 0.0
                     except (TypeError, ValueError):
                         score = 0.0
                     else:
