@@ -43,7 +43,18 @@ class LiveLogWriter:
         self.jsonl.touch()
         self.thoughts_log.touch()
 
-    def append_turn(self, round_idx: int, turn_idx: int, speaker: str, content: str):
+    def append_turn(
+        self,
+        round_idx: int,
+        turn_idx: int,
+        speaker: str,
+        content: str,
+        *,
+        phase_id: Optional[int] = None,
+        phase_turn: Optional[int] = None,
+        phase_kind: Optional[str] = None,
+        phase_base: Optional[int] = None,
+    ):
         """1発言分のログを追記する。"""
 
         line = content.strip()
@@ -59,6 +70,9 @@ class LiveLogWriter:
             "speaker": speaker,
             "content": content,
         }
+        phase_info = self._phase_record(phase_id, phase_turn, phase_kind, phase_base)
+        if phase_info:
+            record["phase"] = phase_info
         with self.jsonl.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             f.flush()
@@ -88,7 +102,16 @@ class LiveLogWriter:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
             f.flush()
 
-    def append_summary(self, round_idx: int, summary: str):
+    def append_summary(
+        self,
+        round_idx: int,
+        summary: str,
+        *,
+        phase_id: Optional[int] = None,
+        phase_turn: Optional[int] = None,
+        phase_kind: Optional[str] = None,
+        phase_base: Optional[int] = None,
+    ):
         """ラウンド要約を追記する。"""
 
         text = summary.strip()
@@ -107,6 +130,9 @@ class LiveLogWriter:
             "round": round_idx,
             "summary": text,
         }
+        phase_info = self._phase_record(phase_id, phase_turn, phase_kind, phase_base)
+        if phase_info:
+            record["phase"] = phase_info
         with self.jsonl.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             f.flush()
@@ -142,6 +168,27 @@ class LiveLogWriter:
             json.dumps(kpi, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    @staticmethod
+    def _phase_record(
+        phase_id: Optional[int],
+        phase_turn: Optional[int],
+        phase_kind: Optional[str],
+        phase_base: Optional[int],
+    ) -> Optional[Dict[str, object]]:
+        """フェーズ情報の辞書表現を作成する。"""
+
+        if phase_id is None or phase_turn is None:
+            return None
+        payload: Dict[str, object] = {
+            "id": phase_id,
+            "turn": phase_turn,
+        }
+        if phase_kind:
+            payload["kind"] = phase_kind
+        if phase_base is not None:
+            payload["base"] = phase_base
+        return payload
 
 
 __all__ = ["LiveLogWriter"]
