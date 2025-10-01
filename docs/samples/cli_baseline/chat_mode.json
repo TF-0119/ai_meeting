@@ -5,24 +5,48 @@
       "round": 1,
       "turn": 1,
       "speaker": "Alice",
-      "content": "Aliceが決定事項を共有。Alice視点: 空間を活かす案を検証する。担当:Alice 期限:今週末"
+      "content": "Aliceが決定事項を共有。Alice視点: 空間を活かす案を検証する。担当:Alice 期限:今週末",
+      "phase": {
+        "id": 0,
+        "turn": 1,
+        "kind": "discussion",
+        "base": 0
+      }
     },
     {
       "type": "summary",
       "round": 1,
-      "summary": "- 差分: Aliceが決定事項を共有。Alice視点: 空間を活かす案を検証する。担当:Alice 期限:今週末"
+      "summary": "- 差分: Aliceが決定事項を共有。Alice視点: 空間を活かす案を検証する。担当:Alice 期限:今週末",
+      "phase": {
+        "id": 0,
+        "turn": 1,
+        "kind": "discussion",
+        "base": 0
+      }
     },
     {
       "type": "turn",
       "round": 2,
       "turn": 2,
       "speaker": "Bob",
-      "content": "Bobが決定事項を共有。Bob視点: 空間を活かす案を検証する。担当:Bob 期限:今週末"
+      "content": "Bobが決定事項を共有。Bob視点: 空間を活かす案を検証する。担当:Bob 期限:今週末",
+      "phase": {
+        "id": 0,
+        "turn": 2,
+        "kind": "discussion",
+        "base": 0
+      }
     },
     {
       "type": "summary",
       "round": 2,
-      "summary": "- 差分: Bobが決定事項を共有。Bob視点: 空間を活かす案を検証する。担当:Bob 期限:今週末"
+      "summary": "- 差分: Bobが決定事項を共有。Bob視点: 空間を活かす案を検証する。担当:Bob 期限:今週末",
+      "phase": {
+        "id": 0,
+        "turn": 2,
+        "kind": "discussion",
+        "base": 0
+      }
     },
     {
       "type": "final",
@@ -33,6 +57,7 @@
     "topic": "テストE2E",
     "precision": 6,
     "rounds": 2,
+    "phase_turn_limit": 2,
     "resolve_round": true,
     "agents": [
       {

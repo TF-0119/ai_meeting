@@ -498,6 +498,9 @@ class Meeting:
         last_summary = ""
         order = self.cfg.agents[:]  # 発言順
         global_turn = 0
+        if self.cfg.rounds <= 0:
+            self.metrics.stop()
+            return
         while self._phase_state and not self._phase_state.is_completed():
             current_phase = self._phase_state
             phase_turn = current_phase.turn_count + 1

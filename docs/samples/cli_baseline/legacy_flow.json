@@ -5,24 +5,48 @@
       "round": 1,
       "turn": 1,
       "speaker": "Alice",
-      "content": "改善案: 手順・安全・得点方法を明記"
+      "content": "改善案: 手順・安全・得点方法を明記",
+      "phase": {
+        "id": 0,
+        "turn": 1,
+        "kind": "discussion",
+        "base": 0
+      }
     },
     {
       "type": "summary",
       "round": 1,
-      "summary": "- 差分: 改善案: 手順・安全・得点方法を明記"
+      "summary": "- 差分: 改善案: 手順・安全・得点方法を明記",
+      "phase": {
+        "id": 0,
+        "turn": 1,
+        "kind": "discussion",
+        "base": 0
+      }
     },
     {
       "type": "turn",
       "round": 2,
       "turn": 2,
       "speaker": "Bob",
-      "content": "改善案: 手順・安全・得点方法を明記"
+      "content": "改善案: 手順・安全・得点方法を明記",
+      "phase": {
+        "id": 0,
+        "turn": 2,
+        "kind": "discussion",
+        "base": 0
+      }
     },
     {
       "type": "summary",
       "round": 2,
-      "summary": "- 差分: 改善案: 手順・安全・得点方法を明記"
+      "summary": "- 差分: 改善案: 手順・安全・得点方法を明記",
+      "phase": {
+        "id": 0,
+        "turn": 2,
+        "kind": "discussion",
+        "base": 0
+      }
     },
     {
       "type": "final",
@@ -33,6 +57,7 @@
     "topic": "E2E旧フロー",
     "precision": 4,
     "rounds": 2,
+    "phase_turn_limit": 2,
     "resolve_round": false,
     "agents": [
       {
