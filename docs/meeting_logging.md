@@ -5,7 +5,7 @@
 - `meeting_live.jsonl`: 各発言・要約・最終決定を `ts/type/round/turn/speaker/content` などのキーで1行JSONとして蓄積するライブログ。`type` は `"turn"`/`"summary"`/`"final"` をとる。【F:backend/ai_meeting/logging.py†L14-L139】
 - `phases.jsonl`: 監視AI（Monitor）がフェーズ確定時に書き出すメタ情報。本文には挿入せず、`cohesion` や `phase_id` に加えて `phase.goal` などのフェーズ目標も JSONL で保持する。【F:backend/ai_meeting/logging.py†L23-L70】【F:backend/ai_meeting/meeting.py†L120-L204】
 - `thoughts.jsonl`: 思考→審査フローを有効化した場合に、各ラウンドの全エージェント思考と審査結果を格納するデバッグ用ログ。【F:backend/ai_meeting/logging.py†L24-L77】【F:backend/ai_meeting/meeting.py†L297-L320】
-- `summary_probe.json`: `MeetingConfig.summary_probe_enabled` を有効化した場合に出力を予定している暫定ファイル。CLI では `--summary-probe` と `--summary-probe-filename` で制御し、YAML/JSON では `summary_probe_enabled` / `summary_probe_filename` キーで設定できるよう整備中。【F:backend/ai_meeting/config.py†L79-L86】【F:backend/ai_meeting/cli.py†L53-L83】
+- `summary_probe.json`: `MeetingConfig.summary_probe_enabled` を有効化した場合に出力を予定している暫定ファイル。テスト要約AIが生成したログのみを JSON Lines で蓄積し、他機能へは影響しない。CLI では `--summary-probe` と `--summary-probe-filename` で制御し、YAML/JSON では `summary_probe_enabled` / `summary_probe_filename` キーで設定できるよう整備中。【F:backend/ai_meeting/config.py†L79-L86】【F:backend/ai_meeting/cli.py†L53-L83】
 - `control.jsonl`: KPIフィードバックが閾値を下回った際に自動生成される制御ログ。`type="kpi_control"` に各種指標とヒントを付与して保存する。【F:backend/ai_meeting/logging.py†L79-L84】【F:backend/ai_meeting/meeting.py†L448-L468】
 - `kpi.json`: 会議終了時のKPI指標（progress/diversity/decision_density/spec_coverage）をJSONで保存し、同時にMarkdownにも反映する。【F:backend/ai_meeting/logging.py†L128-L139】【F:backend/ai_meeting/meeting.py†L531-L537】
 - `meeting_live.html`: 将来のHTMLビューア用にパスだけ予約されているが、現状は未書き込み。`LiveLogWriter` 初期化時にファイルパスが確保される。【F:backend/ai_meeting/logging.py†L14-L43】

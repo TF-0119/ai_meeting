@@ -77,7 +77,7 @@ def parse_args() -> argparse.Namespace:
         "--summary-probe-log",
         dest="summary_probe_log_enabled",
         action="store_true",
-        help="要約プローブ結果を毎ターンJSONLへ保存（暫定）",
+        help="要約プローブ結果（テスト要約AI）を毎ターンJSONLへ保存。summary_probe.json に記録され、他機能へは影響しない",
     )
     ap.add_argument(
         "--summary-probe-filename",

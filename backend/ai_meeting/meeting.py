@@ -49,7 +49,12 @@ class Meeting:
         self._summary_probe_records: List[Dict[str, Any]] = []
         self._summary_probe_logger: Optional[SummaryProbe] = None
         self._pending = PendingTracker()  # 残課題トラッカー
-        self.logger = LiveLogWriter(self.cfg.topic, outdir=self.cfg.outdir, ui_minimal=self.cfg.ui_minimal)
+        self.logger = LiveLogWriter(
+            self.cfg.topic,
+            outdir=self.cfg.outdir,
+            ui_minimal=self.cfg.ui_minimal,
+            summary_probe_filename=self.cfg.summary_probe_filename,
+        )
         self.equilibrium_enabled = self.cfg.equilibrium
         self._monitor = Monitor(self.cfg) if self.cfg.monitor else None
         self._phase_id = 0
@@ -480,7 +485,7 @@ class Meeting:
                 if phase_base is not None:
                     phase_payload["base"] = phase_base
                 payload["phase"] = phase_payload
-            self.logger.append_summary_probe(payload, self.cfg.summary_probe_filename)
+            self.logger.append_summary_probe(payload)
         except Exception as exc:  # noqa: BLE001 - ログ記録では失敗を握りつぶす
             self.logger.append_warning(
                 "summary_probe_logging_failed",

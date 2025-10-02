@@ -12,7 +12,13 @@ from typing import Any, Dict, Optional
 class LiveLogWriter:
     """Markdown/JSONL ログを逐次追記するライター。"""
 
-    def __init__(self, topic: str, outdir: Optional[str] = None, ui_minimal: bool = True):
+    def __init__(
+        self,
+        topic: str,
+        outdir: Optional[str] = None,
+        ui_minimal: bool = True,
+        summary_probe_filename: str = "summary_probe.json",
+    ):
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         safe_topic = "".join(c if c.isalnum() or c in "-_（）()[]" else "_" for c in topic)[:80]
         base_dir = Path(outdir or f"logs/{ts}_{safe_topic}")
@@ -25,6 +31,7 @@ class LiveLogWriter:
         self.phase_log = base_dir / "phases.jsonl"
         # ★ 思考ログ（デバッグ用・本文には出さない）
         self.thoughts_log = base_dir / "thoughts.jsonl"
+        self.summary_probe_log = base_dir / summary_probe_filename
 
         # ヘッダを書いておく
         with self.md.open("w", encoding="utf-8", newline="\n") as f:
@@ -42,6 +49,7 @@ class LiveLogWriter:
         # JSONLは空ファイル作成のみ
         self.jsonl.touch()
         self.thoughts_log.touch()
+        self.summary_probe_log.touch()
 
     def append_turn(
         self,
@@ -137,11 +145,10 @@ class LiveLogWriter:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             f.flush()
 
-    def append_summary_probe(self, payload: Dict[str, Any], filename: str) -> None:
-        """要約プローブの結果を指定ファイルへ追記する。"""
+    def append_summary_probe(self, payload: Dict[str, Any]) -> None:
+        """要約プローブの結果を JSONL 形式で追記する。"""
 
-        path = self.dir / filename
-        with path.open("a", encoding="utf-8", newline="\n") as f:
+        with self.summary_probe_log.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
             f.flush()
 
