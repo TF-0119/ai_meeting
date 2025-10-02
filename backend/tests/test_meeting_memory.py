@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from typing import Iterable, Optional
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -9,19 +10,30 @@ from backend.ai_meeting.config import AgentConfig, MeetingConfig, Turn
 from backend.ai_meeting.meeting import Meeting
 
 
-def _build_meeting(tmp_path, monkeypatch, *, memory_limit=3, memory_window=2):
+def _build_meeting(
+    tmp_path,
+    monkeypatch,
+    *,
+    memory_limit=3,
+    memory_window=2,
+    agents: Optional[Iterable[AgentConfig]] = None,
+):
     """メモリ検証用の Meeting を生成する補助関数。"""
 
     monkeypatch.setenv("AI_MEETING_TEST_MODE", "deterministic")
     cfg = MeetingConfig(
         topic="メモリ検証",  # テスト用
         precision=5,
-        agents=[
-            AgentConfig(
-                name="Alice",
-                system="あなたは会議参加者です。",
-            )
-        ],
+        agents=list(
+            agents
+            if agents is not None
+            else [
+                AgentConfig(
+                    name="Alice",
+                    system="あなたは会議参加者です。",
+                )
+            ]
+        ),
         backend_name="ollama",
         agent_memory_limit=memory_limit,
         agent_memory_window=memory_window,
@@ -58,6 +70,89 @@ def test_record_agent_memory_appends_and_trims(tmp_path, monkeypatch):
         "次: 実行プランを策定",
         "進捗: 実装を開始",
         "注意: 期限が厳しい",
+    ]
+
+
+def test_record_agent_memory_broadcasts_to_all_agents(tmp_path, monkeypatch):
+    """要約が全エージェントに共有され、話者名が付与されることを検証する。"""
+
+    meeting = _build_meeting(
+        tmp_path,
+        monkeypatch,
+        memory_limit=3,
+        agents=[
+            AgentConfig(name="Alice", system="司会者"),
+            AgentConfig(name="Bob", system="参加者"),
+            AgentConfig(name="Carol", system="参加者"),
+        ],
+    )
+    speaker = meeting.cfg.agents[0]
+    others = meeting.cfg.agents[1:]
+    everyone = [ag.name for ag in meeting.cfg.agents]
+
+    meeting.history.append(Turn(speaker=speaker.name, content="初回の提案。"))
+    meeting._record_agent_memory(
+        everyone,
+        {"summary": "- 決定: プロトタイプを作成\n- 次: レビューの準備"},
+        speaker_name=speaker.name,
+    )
+
+    assert meeting._agent_memory[speaker.name] == [
+        "決定: プロトタイプを作成",
+        "次: レビューの準備",
+    ]
+
+    for listener in others:
+        assert meeting._agent_memory[listener.name] == [
+            f"{speaker.name}の発言: 決定: プロトタイプを作成",
+            f"{speaker.name}の発言: 次: レビューの準備",
+        ]
+
+    meeting.history.append(Turn(speaker=speaker.name, content="二度目の共有。"))
+    meeting._record_agent_memory(
+        everyone,
+        {"summary": "- 決定: プロトタイプを作成\n- 次: レビューの準備"},
+        speaker_name=speaker.name,
+    )
+
+    assert meeting._agent_memory[speaker.name] == [
+        "決定: プロトタイプを作成",
+        "次: レビューの準備",
+    ]
+    for listener in others:
+        assert meeting._agent_memory[listener.name] == [
+            f"{speaker.name}の発言: 決定: プロトタイプを作成",
+            f"{speaker.name}の発言: 次: レビューの準備",
+        ]
+
+    meeting.history.append(Turn(speaker=speaker.name, content="追加の注意喚起。"))
+    meeting._record_agent_memory(
+        everyone,
+        {"summary": "- 注意: スケジュールを見直す"},
+        speaker_name=speaker.name,
+    )
+
+    assert meeting._agent_memory[speaker.name] == [
+        "決定: プロトタイプを作成",
+        "次: レビューの準備",
+        "注意: スケジュールを見直す",
+    ]
+
+    for listener in others:
+        assert meeting._agent_memory[listener.name] == [
+            f"{speaker.name}の発言: 決定: プロトタイプを作成",
+            f"{speaker.name}の発言: 次: レビューの準備",
+            f"{speaker.name}の発言: 注意: スケジュールを見直す",
+        ]
+        snapshot = meeting._agent_memory_snapshot(listener.name)
+        assert snapshot == [
+            f"{speaker.name}の発言: 次: レビューの準備",
+            f"{speaker.name}の発言: 注意: スケジュールを見直す",
+        ]
+
+    assert meeting._agent_memory_snapshot(speaker.name) == [
+        "次: レビューの準備",
+        "注意: スケジュールを見直す",
     ]
 
 
