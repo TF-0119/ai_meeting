@@ -47,6 +47,7 @@ class Meeting:
         self.critique_passes = rp["critique_passes"]
         self._summary_probe = SummaryProbe(self.backend, self.cfg)
         self._summary_probe_records: List[Dict[str, Any]] = []
+        self._summary_probe_logger: Optional[SummaryProbe] = None
         self._pending = PendingTracker()  # 残課題トラッカー
         self.logger = LiveLogWriter(self.cfg.topic, outdir=self.cfg.outdir, ui_minimal=self.cfg.ui_minimal)
         self.equilibrium_enabled = self.cfg.equilibrium
@@ -452,6 +453,45 @@ class Meeting:
             self._summary_probe_records.append(result)
         return result.get("summary", "")
 
+    def _log_summary_probe(
+        self,
+        *,
+        turn: Turn,
+        round_idx: int,
+        phase_id: Optional[int],
+        phase_turn: Optional[int],
+        phase_kind: Optional[str],
+        phase_base: Optional[int],
+    ) -> None:
+        """要約プローブ結果をログへ安全に書き出す。"""
+
+        if not self.cfg.summary_probe_log_enabled:
+            return
+        if self._summary_probe_logger is None:
+            self._summary_probe_logger = SummaryProbe(self.backend, self.cfg)
+        try:
+            record = self._summary_probe_logger.generate_summary(turn, self.history)
+            payload: Dict[str, Any] = dict(record)
+            payload["round"] = round_idx
+            if phase_id is not None and phase_turn is not None:
+                phase_payload: Dict[str, Any] = {"id": phase_id, "turn": phase_turn}
+                if phase_kind:
+                    phase_payload["kind"] = phase_kind
+                if phase_base is not None:
+                    phase_payload["base"] = phase_base
+                payload["phase"] = phase_payload
+            self.logger.append_summary_probe(payload, self.cfg.summary_probe_filename)
+        except Exception as exc:  # noqa: BLE001 - ログ記録では失敗を握りつぶす
+            self.logger.append_warning(
+                "summary_probe_logging_failed",
+                context={
+                    "error": str(exc),
+                    "round": round_idx,
+                    "turn_index": len(self.history),
+                    "speaker": turn.speaker,
+                },
+            )
+
     def _critic_pass(self, text: str) -> str:
         # 簡易ファクトチェック／自省（外部Webアクセスなし）
         req = LLMRequest(
@@ -664,6 +704,14 @@ class Meeting:
                 phase_kind=current_phase.kind,
                 phase_base=current_phase.legacy_round_base,
             )
+            self._log_summary_probe(
+                turn=self.history[-1],
+                round_idx=round_idx,
+                phase_id=current_phase.id,
+                phase_turn=phase_turn,
+                phase_kind=current_phase.kind,
+                phase_base=current_phase.legacy_round_base,
+            )
             self._pending.add_from_text(last_summary)
             unresolved_count = len(self._pending.items)
             self._unresolved_history.append(unresolved_count)
@@ -795,6 +843,8 @@ class Meeting:
             "metrics_cpu_mem_png": base_dir / "metrics_cpu_mem.png",
             "metrics_gpu_png": base_dir / "metrics_gpu.png",
         }
+        if self.cfg.summary_probe_log_enabled:
+            artifact_candidates["summary_probe_json"] = base_dir / self.cfg.summary_probe_filename
         files = {key: _relative(path) for key, path in artifact_candidates.items()}
         with result_path.open("w", encoding="utf-8") as f:
             json.dump(
@@ -879,6 +929,14 @@ class Meeting:
             self.logger.append_summary(
                 round_idx,
                 last_summary,
+                phase_id=state.id,
+                phase_turn=phase_turn,
+                phase_kind=state.kind,
+                phase_base=state.legacy_round_base,
+            )
+            self._log_summary_probe(
+                turn=self.history[-1],
+                round_idx=round_idx,
                 phase_id=state.id,
                 phase_turn=phase_turn,
                 phase_kind=state.kind,

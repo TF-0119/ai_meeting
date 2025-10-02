@@ -6,7 +6,7 @@ import re
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
 class LiveLogWriter:
@@ -137,6 +137,14 @@ class LiveLogWriter:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             f.flush()
 
+    def append_summary_probe(self, payload: Dict[str, Any], filename: str) -> None:
+        """要約プローブの結果を指定ファイルへ追記する。"""
+
+        path = self.dir / filename
+        with path.open("a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            f.flush()
+
     def append_final(self, final_text: str):
         """最終合意内容を追記する。"""
 
@@ -168,6 +176,20 @@ class LiveLogWriter:
             json.dumps(kpi, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    def append_warning(self, message: str, *, context: Optional[Dict[str, Any]] = None) -> None:
+        """警告情報を JSONL ログへ追記する。"""
+
+        record: Dict[str, Any] = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "type": "warning",
+            "message": message,
+        }
+        if context:
+            record["context"] = context
+        with self.jsonl.open("a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            f.flush()
 
     @staticmethod
     def _phase_record(
