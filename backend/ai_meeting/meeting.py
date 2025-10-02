@@ -237,13 +237,32 @@ class Meeting:
             "短く（1〜2文、日本語）、次の一手として有効な案だけを書いてください。"
             "見出し・箇条書き・メタ言及は禁止。"
         )
+        last_turn = self.history[-1] if self.history else None
+        if last_turn:
+            # 直前発言の要点を1行にまとめる（思考を相手指向に寄せるため）。
+            normalized = " ".join(last_turn.content.strip().split())
+            if len(normalized) > 80:
+                normalized = normalized[:80] + "…"
+            last_turn_detail = f"{last_turn.speaker}: {normalized}" if normalized else f"{last_turn.speaker}: (内容なし)"
+        else:
+            last_turn_detail = "直前発言なし"
         recent = self._recent_context(self.cfg.chat_window)
-        user = f"Topic: {self.cfg.topic}\n直近: {recent}\n要約: {last_summary}\n\n次の一手（思考のみ）:"
+        user_lines = [
+            f"Topic: {self.cfg.topic}",
+            f"last_turn_detail: {last_turn_detail}",
+            f"直近: {recent}" if recent else "直近: (発言なし)",
+            f"要約: {last_summary}" if last_summary else "要約: (未設定)",
+            "",
+            "前回の発言者（名前）への応答方針を1文でまとめ、必要なら次の質問を用意する。",
+            "次の一手（思考のみ）:",
+        ]
+        user = "\n".join(user_lines)
         req = LLMRequest(
             system=sys,
             messages=[{"role": "user", "content": user}],
             temperature=min(0.9, self.temperature + 0.1),
             max_tokens=120,
+            last_turn_detail=last_turn_detail,
         )
         return self._enforce_chat_constraints(self.backend.generate(req)).strip()
 

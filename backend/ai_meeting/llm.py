@@ -17,6 +17,7 @@ class LLMRequest(BaseModel):
     messages: list[dict[str, str]]
     temperature: float = 0.7
     max_tokens: int = 800
+    last_turn_detail: Optional[str] = None
 
 
 class LLMBackend:
