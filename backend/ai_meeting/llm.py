@@ -57,7 +57,7 @@ class OpenAIBackend(LLMBackend):
 class OllamaBackend(LLMBackend):
     """ローカルの Ollama API を利用するバックエンド。"""
 
-    def __init__(self, model: str = "llama3", host: str = "http://127.0.0.1:11434"):
+    def __init__(self, model: str = "gpt-oss:20b", host: str = "http://127.0.0.1:11434"):
         import requests
 
         self.requests = requests

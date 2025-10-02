@@ -38,7 +38,7 @@ class Meeting:
         elif cfg.backend_name == "openai":
             self.backend = OpenAIBackend(model=cfg.openai_model)
         else:
-            model = cfg.ollama_model or os.getenv("OLLAMA_MODEL", "llama3")
+            model = cfg.ollama_model or os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
             host = cfg.ollama_url or os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
             self.backend = OllamaBackend(model=model, host=host)
         rp = self.cfg.runtime_params()

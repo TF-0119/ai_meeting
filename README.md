@@ -49,7 +49,7 @@ Meeting(cfg).run()
    pip install pydantic psutil matplotlib pynvml GPUtil requests openai
    ```
    ※ `pynvml` や `GPUtil` は GPU 利用率を取得したいときのみ必須です。【F:backend/ai_meeting/metrics.py†L17-L93】
-2. Ollama を利用する場合は `ollama run llama3` などでローカルサーバーを立ち上げておきます (既定は `http://localhost:11434`)。【F:backend/ai_meeting/llm.py†L55-L80】
+2. Ollama を利用する場合は `ollama run gpt-oss:20b` などでローカルサーバーを立ち上げておきます (既定は `http://localhost:11434`)。【F:backend/ai_meeting/llm.py†L55-L80】
 3. OpenAI を利用する場合は `OPENAI_API_KEY` と必要なら `OPENAI_MODEL` を環境変数に設定します。【F:backend/ai_meeting/llm.py†L27-L52】
 4. 会議を実行します。例：
    ```bash
