@@ -67,6 +67,17 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--chat-max-chars", type=int, default=120)
     ap.add_argument("--chat-window", type=int, default=2)
     ap.add_argument("--outdir", default=None, help="ログ出力先ディレクトリ（未指定なら自動生成）")
+    ap.add_argument(
+        "--summary-probe",
+        dest="summary_probe_enabled",
+        action="store_true",
+        help="要約プローブを有効化して補助JSONを保存（暫定機能）",
+    )
+    ap.add_argument(
+        "--summary-probe-filename",
+        default="summary_probe.json",
+        help="要約プローブの出力ファイル名（暫定）",
+    )
     # 以降のステップ用（Step 0では未使用。フラグだけ受ける）
     ap.add_argument(
         "--equilibrium",
@@ -239,6 +250,8 @@ def main() -> None:
         phase_loop_threshold=max(1, int(getattr(args, "phase_loop_threshold", 3))),
         think_mode=getattr(args, "think_mode", True),
         think_debug=getattr(args, "think_debug", True),
+        summary_probe_enabled=getattr(args, "summary_probe_enabled", False),
+        summary_probe_filename=getattr(args, "summary_probe_filename", "summary_probe.json"),
     )
     cfg.kpi_window = max(1, int(getattr(args, "kpi_window", 6)))
     cfg.kpi_auto_prompt = getattr(args, "kpi_auto_prompt", True)
