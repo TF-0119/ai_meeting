@@ -300,36 +300,71 @@ class Meeting:
         bullets = "\n".join(f"- {item}" for item in memory)
         return f"最近の覚書:\n{bullets}"
 
-    def _record_agent_memory(self, agent_name: str, summary_payload: Dict[str, Any]) -> None:
+    def _record_agent_memory(
+        self,
+        agent_names: Any,
+        summary_payload: Dict[str, Any],
+        *,
+        speaker_name: Optional[str] = None,
+    ) -> None:
         """ターン要約からエージェントの覚書を更新する。"""
 
         if not self.history:
             return
+
+        if isinstance(agent_names, str):
+            targets = [agent_names]
+        else:
+            try:
+                targets = [name for name in agent_names]
+            except TypeError:
+                targets = [agent_names]
+
+        if not targets:
+            return
+
         turn = self.history[-1]
-        existing = self._agent_memory.setdefault(agent_name, [])
-        seen = set(existing)
-        entries: List[str] = []
+        base_entries: List[str] = []
         summary_text = ""
         if isinstance(summary_payload, dict):
             summary_text = summary_payload.get("summary", "") or ""
         if summary_text:
+            seen_base: set[str] = set()
             for line in summary_text.splitlines():
                 clean = re.sub(r"^[\s\-\*\u30fb・•\d\.\)]{0,3}", "", line).strip()
-                if not clean or clean in seen:
+                if not clean or clean in seen_base:
                     continue
-                entries.append(clean)
-                seen.add(clean)
+                base_entries.append(clean)
+                seen_base.add(clean)
         fallback = turn.content.strip()
-        if not entries and fallback and fallback not in seen:
-            entries.append(fallback)
-            seen.add(fallback)
-        if not entries:
+        if not base_entries and fallback:
+            base_entries.append(fallback)
+
+        if not base_entries:
             return
-        existing.extend(entries)
+
         limit = getattr(self.cfg, "agent_memory_limit", 0)
-        if isinstance(limit, int) and limit > 0 and len(existing) > limit:
-            del existing[:-limit]
-        self._agent_memory[agent_name] = existing
+        for name in targets:
+            if not isinstance(name, str):
+                continue
+            existing = self._agent_memory.setdefault(name, [])
+            seen = set(existing)
+            new_entries: List[str] = []
+            for entry in base_entries:
+                if speaker_name and name != speaker_name:
+                    item = f"{speaker_name}の発言: {entry}"
+                else:
+                    item = entry
+                if item in seen:
+                    continue
+                new_entries.append(item)
+                seen.add(item)
+            if not new_entries:
+                continue
+            existing.extend(new_entries)
+            if isinstance(limit, int) and limit > 0 and len(existing) > limit:
+                del existing[:-limit]
+            self._agent_memory[name] = existing
 
     def _assign_personalities(self) -> None:
         """各エージェントへ個性テンプレートを割り当てる。"""
@@ -966,7 +1001,11 @@ class Meeting:
             summary_payload = self._summarize_round(self.history[-1])
             last_summary = self._dedupe_bullets(summary_payload.get("summary", ""))
             summary_payload["summary"] = last_summary
-            self._record_agent_memory(current_speaker.name, summary_payload)
+            self._record_agent_memory(
+                [ag.name for ag in self.cfg.agents],
+                summary_payload,
+                speaker_name=current_speaker.name,
+            )
             self._conversation_summary(
                 new_turn=self.history[-1],
                 round_summary=last_summary or None,
@@ -1204,7 +1243,11 @@ class Meeting:
             summary_payload = self._summarize_round(self.history[-1])
             last_summary = self._dedupe_bullets(summary_payload.get("summary", ""))
             summary_payload["summary"] = last_summary
-            self._record_agent_memory(agent.name, summary_payload)
+            self._record_agent_memory(
+                [ag.name for ag in self.cfg.agents],
+                summary_payload,
+                speaker_name=agent.name,
+            )
             self._conversation_summary(
                 new_turn=self.history[-1],
                 round_summary=last_summary or None,
