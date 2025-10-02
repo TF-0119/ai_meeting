@@ -75,7 +75,8 @@ def test_judge_thoughts_normalizes_names_and_winner() -> None:
     )
     meeting = _make_meeting(response)
 
-    result = meeting._judge_thoughts({"Alice": "案A", "Bob": "案B"})
+    flow_summary = meeting._conversation_summary()
+    result = meeting._judge_thoughts({"Alice": "案A", "Bob": "案B"}, "", flow_summary)
 
     assert result["winner"] == "Alice"
     assert pytest.approx(result["scores"]["Alice"]["score"], rel=1e-9) == 0.9
@@ -103,7 +104,8 @@ def test_judge_thoughts_fallback_uses_random_choice(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(meeting_module.random, "choice", _fake_choice)
 
-    result = meeting._judge_thoughts({"Alice": "案A", "Bob": "案B"})
+    flow_summary = meeting._conversation_summary()
+    result = meeting._judge_thoughts({"Alice": "案A", "Bob": "案B"}, "", flow_summary)
 
     assert result["winner"] == "Bob"
     assert chosen_candidates and chosen_candidates[0] == ["Alice", "Bob"]
@@ -136,3 +138,22 @@ def test_resolve_winner_switches_even_without_scores() -> None:
     resolved = meeting._resolve_winner(verdict, "Alice")
 
     assert resolved == "Bob"
+
+
+def test_judge_thoughts_prompt_includes_summaries() -> None:
+    """審査プロンプトに直近要約と会話サマリーが含まれる。"""
+
+    meeting = _make_meeting("{}", ["Alice"])
+    meeting.history = [SimpleNamespace(speaker="Alice", content="こんにちは")]
+    meeting._conversation_summary_points = ["Alice: こんにちは"]
+    meeting._conversation_summary_text = "- Alice: こんにちは"
+    last_summary = "前回のまとめ"
+    flow_summary = meeting._conversation_summary()
+
+    meeting._judge_thoughts({"Alice": "案A"}, last_summary, flow_summary)
+
+    assert meeting.backend.requests, "リクエストが記録されていません"
+    prompt = meeting.backend.requests[-1].messages[0]["content"]
+    assert f"直近要約: {last_summary}" in prompt
+    assert "会話の流れサマリー" in prompt
+    assert "- Alice: こんにちは" in prompt
