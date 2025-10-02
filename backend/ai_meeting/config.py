@@ -83,6 +83,8 @@ class MeetingConfig(BaseModel):
     # ---- Step8前: 思考→審査→発言（T3→T1）MVP ----
     think_mode: bool = True  # 全員が非公開の「思考」を出してから発言者を決める
     think_debug: bool = True  # thoughts.jsonl に全思考・採点を保存（本文には出さない）
+    summary_probe_enabled: bool = False  # 要約プローブ（暫定）を有効化するかどうか
+    summary_probe_filename: str = "summary_probe.json"  # 要約プローブの出力ファイル名
     # --- Step 7: KPIフィードバック制御 ---
     kpi_window: int = 6  # 直近W発言でミニKPIを算出
     kpi_auto_prompt: bool = True  # 閾値割れで隠しプロンプトを注入

@@ -73,6 +73,7 @@ Meeting(cfg).run()
 - `--rounds`：従来のラウンド数指定。現在は `phase_turn_limit` のエイリアスとして読み替えられ、実行時に非推奨警告が表示されます。【F:backend/ai_meeting/cli.py†L20-L206】【F:backend/ai_meeting/config.py†L30-L171】
 - `--think-mode`：思考→審査→発言 (T3→T1) のプロセスを有効化/無効化します。【F:backend/ai_meeting/config.py†L83-L85】【F:backend/ai_meeting/meeting.py†L543-L618】
 - `--outdir`：ログ出力先を明示指定。未指定なら自動で `logs/<日時_トピック>` を作成します。【F:backend/ai_meeting/config.py†L77-L78】【F:backend/ai_meeting/logging.py†L14-L44】
+- `--summary-probe` / `--summary-probe-filename`：要約プローブ用の補助JSON (`summary_probe_filename` 既定値は `summary_probe.json`) を有効化・ファイル名変更します。YAML/JSON 設定では `summary_probe_enabled: true` のように指定できます。【F:backend/ai_meeting/config.py†L79-L86】【F:backend/ai_meeting/cli.py†L53-L83】
 
 ## ログファイルの構成
 - `meeting_live.jsonl`：1 行 1 発言の JSON Lines。フロントエンドのタイムラインが参照します。【F:backend/ai_meeting/logging.py†L14-L107】【F:frontend/src/services/api.js†L17-L37】
