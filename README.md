@@ -44,14 +44,25 @@ Meeting(cfg).run()
 オフラインの自動テストでは `AI_MEETING_TEST_MODE=deterministic` を環境変数に設定すると、`backend.ai_meeting.testing.DeterministicLLMBackend` が自動で差し替わり、外部 LLM なしで決定論的なログと KPI を得られます。
 
 ## バックエンドのセットアップと実行
-1. Python 3.10 以上の環境を用意し、必要なパッケージをインストールします。Ollama を使う場合は `requests`、OpenAI を使う場合は `openai` が必要です。テストモードのみを動かす場合は `pydantic` と `psutil` があれば十分です。
+1. Python 3.10 以上の環境を用意し、必要なパッケージをインストールします。Ollama を使う場合は `requests`、OpenAI を使う場合は `openai` が必要です。FastAPI サーバーを動かすために `fastapi`・`uvicorn`・`httpx`・`python-dotenv` も追加で入れておきます。テストモードのみを動かす場合は `pydantic` と `psutil` があれば十分です。
    ```bash
-   pip install pydantic psutil matplotlib pynvml GPUtil requests openai
+   pip install pydantic psutil matplotlib pynvml GPUtil requests openai fastapi uvicorn httpx python-dotenv
    ```
    ※ `pynvml` や `GPUtil` は GPU 利用率を取得したいときのみ必須です。【F:backend/ai_meeting/metrics.py†L17-L93】
 2. Ollama を利用する場合は `ollama run gpt-oss:20b` などでローカルサーバーを立ち上げておきます (既定は `http://localhost:11434`)。【F:backend/ai_meeting/llm.py†L55-L80】
 3. OpenAI を利用する場合は `OPENAI_API_KEY` と必要なら `OPENAI_MODEL` を環境変数に設定します。【F:backend/ai_meeting/llm.py†L27-L52】
-4. 会議を実行します。例：
+4. FastAPI アプリ (`backend/app.py`) を起動してフロントエンドと連携させたい場合は、事前に以下のようにサーバーを立ち上げておきます。
+   ```bash
+   uvicorn backend.app:app --reload --port 8000
+   ```
+   アプリでは `/logs` を静的配信しつつ、`/meetings` や `/health` をはじめとする API を公開しています。主なエンドポイントは以下の通りです。
+   - `GET /health`：Ollama との接続確認。
+   - `POST /meetings`：CLI プロセスを起動し、新しい会議を開始。
+   - `GET /meetings` / `GET /meetings/{id}`：起動済み会議の一覧と状態取得。
+   - `GET /meetings/{id}/live`：`meeting_live.jsonl` の末尾をポーリングして最新ログを取得。
+   フロントエンドからは後述の Vite プロキシ経由で `/api/meetings` にアクセスし、会議プロセスの起動やログ取得を行います。【F:backend/app.py†L1-L169】
+
+5. CLI を直接呼び出して会議を実行する場合の例：
    ```bash
    python backend/ai_meeting.py \
      --topic "1畳で遊べる新スポーツを仕様化" \
@@ -88,11 +99,11 @@ Meeting(cfg).run()
    cd frontend
    npm install
    ```
-2. 別ターミナルでリポジトリ直下からログディレクトリを配信します。例：
+2. 別ターミナルで FastAPI サーバーを立ち上げ、ログ配信と API エンドポイントを提供します。
    ```bash
-   python -m http.server 8000
+   uvicorn backend.app:app --reload --port 8000
    ```
-   Vite の開発サーバーは `/logs` へのアクセスを `http://localhost:8000` にプロキシする設定です。【F:frontend/vite.config.js†L6-L16】
+   `backend/app.py` は `/logs` を静的配信した上で、`/meetings` などのエンドポイントを `/api` 経由で利用できるようにしています。`frontend/vite.config.js` では `/logs` と `/api` を `http://127.0.0.1:8000` にプロキシし、`frontend/src/services/api.js` からの `fetch("/api/meetings")` 呼び出しが FastAPI の `/meetings` に到達する構成です。【F:frontend/vite.config.js†L6-L24】【F:frontend/src/services/api.js†L46-L64】
 3. 開発サーバーを起動し、`http://localhost:5173` を開きます。
    ```bash
    npm run dev
