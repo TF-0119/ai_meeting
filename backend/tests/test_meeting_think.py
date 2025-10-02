@@ -52,3 +52,30 @@ def test_think_prompt_focuses_on_last_speaker(tmp_path, monkeypatch):
     assert "last_turn_detail: Bob:" in req.messages[0]["content"]
     assert "前回の発言者（名前）への応答方針を1文でまとめ、必要なら次の質問を用意する。" in req.messages[0]["content"]
 
+
+def test_think_prompt_includes_agent_memory(tmp_path, monkeypatch):
+    """覚書や個性が思考プロンプトと結果へ反映されることを検証する。"""
+
+    meeting = _build_meeting(tmp_path, monkeypatch)
+    meeting._assign_personalities()
+    agent = meeting.cfg.agents[0]
+    meeting._agent_memory[agent.name].append("重要顧客との約束を最優先で守る")
+
+    captured = {}
+
+    def _fake_generate(req):
+        captured["req"] = req
+        return "重要顧客との約束を再確認し、次の打ち手を準備する。"
+
+    meeting.backend.generate = _fake_generate  # type: ignore[method-assign]
+
+    result = meeting._think(agent, last_summary="顧客の期待に応える必要がある")
+
+    assert "重要顧客との約束" in result
+
+    req = captured["req"]
+    user_content = req.messages[0]["content"]
+    assert "最近の覚書" in user_content
+    assert "個性プロファイル" in user_content
+    assert "重要顧客との約束を最優先で守る" in user_content
+    assert "あなたの個性は『ASSERTIVE』" in req.system
