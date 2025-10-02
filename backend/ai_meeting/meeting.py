@@ -266,10 +266,18 @@ class Meeting:
         )
         return self._enforce_chat_constraints(self.backend.generate(req)).strip()
 
-    def _judge_thoughts(self, bundle: Dict[str, str]) -> Dict:
+    def _judge_thoughts(
+        self,
+        bundle: Dict[str, str],
+        last_summary: str,
+        flow_summary: str,
+    ) -> Dict:
         # エージェント名をキーにしたJSONだけを許可
         names = list(bundle.keys())
         recent = self._recent_context(self.cfg.chat_window)
+        recent_text = recent if recent else "(発言なし)"
+        last_summary_text = last_summary if last_summary else "(未設定)"
+        flow_summary_text = flow_summary.strip() if flow_summary else "(未設定)"
         sys = (
             "あなたは中立の審査員です。各候補の『流れ適合/目的適合/質/新規性/実行性』を0〜1で採点し、"
             "総合scoreを算出して勝者を1名だけ選びます。出力はJSONのみ。"
@@ -284,7 +292,14 @@ class Meeting:
         schema = f"{{\"scores\":{{{example_scores}, ...}},\"winner\":\"{names[0]}\"}}"
         lines = [f"{name}: {txt}" for name, txt in bundle.items()]
         user = (
-            f"Topic: {self.cfg.topic}\n直近: {recent}\n\n候補:\n" + "\n".join(lines) + "\n\nJSON形式で厳密に出力（キーは各候補の“名前”）：\n" + schema
+            f"Topic: {self.cfg.topic}\n"
+            f"直近: {recent_text}\n"
+            f"直近要約: {last_summary_text}\n"
+            f"会話の流れサマリー:\n{flow_summary_text}\n\n"
+            "候補:\n"
+            + "\n".join(lines)
+            + "\n\nJSON形式で厳密に出力（キーは各候補の“名前”）：\n"
+            + schema
         )
         req = LLMRequest(
             system=sys,
@@ -677,9 +692,10 @@ class Meeting:
             if not self.cfg.ui_minimal:
                 banner(f"Round {round_idx}")
 
+            flow_summary = self._conversation_summary()
             if self.cfg.think_mode:
                 thoughts: Dict[str, str] = {ag.name: self._think(ag, last_summary) for ag in self.cfg.agents}
-                verdict = self._judge_thoughts(thoughts)
+                verdict = self._judge_thoughts(thoughts, last_summary, flow_summary)
                 previous_speaker = self.history[-1].speaker if self.history else None
                 winner_name = self._resolve_winner(verdict, previous_speaker)
                 verdict["resolved_winner"] = winner_name
@@ -744,13 +760,23 @@ class Meeting:
             if self.equilibrium_enabled:
                 recent = self._recent_context(self.cfg.chat_window)
                 roster = "\n".join([f"- {a.name}: {a.system[:120]}" for a in self.cfg.agents])
+                recent_text = recent if recent else "(発言なし)"
+                last_summary_text = last_summary if last_summary else "(未設定)"
+                flow_summary_text = flow_summary.strip() if flow_summary else "(未設定)"
                 sys_eq = (
                     "あなたはモデレーターです。直近の流れに対して、各参加者が次の1手で"
                     "どれだけ有益な発言をできるかを0〜1で採点します。出力はJSONのみ。"
                 )
-                schema = "{ \"scores\": { \"NAME\": 0-1, ... }, \"rationale\": \"短文\" }"
+                schema = (
+                    "{ \"scores\": { \"NAME\": 0-1, ... }, \"rationale\": \"短文\", "
+                    "\"context\": {\"recent_summary\": \"...\", \"flow_summary\": \"...\"} }"
+                )
                 user_eq = (
-                    f"Topic: {self.cfg.topic}\n直近: {recent}\n\n直前の発言:\n{content}\n\n"
+                    f"Topic: {self.cfg.topic}\n"
+                    f"直近: {recent_text}\n"
+                    f"直近要約: {last_summary_text}\n"
+                    f"会話の流れサマリー:\n{flow_summary_text}\n\n"
+                    f"直前の発言:\n{content}\n\n"
                     f"参加者と視点:\n{roster}\n\nJSON形式で厳密に出力:\n{schema}"
                 )
                 req2 = LLMRequest(
