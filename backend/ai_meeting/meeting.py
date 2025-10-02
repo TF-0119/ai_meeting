@@ -52,6 +52,7 @@ class Meeting:
         self._unresolved_history: List[int] = []
         self._phases: List[PhaseState] = []
         self._legacy_round_offset: int = 0
+        self._phase_state: Optional[PhaseState] = None
         self._phase_state = self._begin_phase(
             PhaseEvent(
                 phase_id=0,
@@ -84,7 +85,8 @@ class Meeting:
         """フェーズを開始し、現在の状態として保持する。"""
 
         phase_id = event.phase_id if event.phase_id is not None else self._phase_id
-        kind = event.kind or (self._phase_state.kind if self._phase_state else "discussion")
+        current = getattr(self, "_phase_state", None)
+        kind = event.kind or (current.kind if current else "discussion")
         state = PhaseState(
             id=phase_id,
             start_turn=event.start_turn,
