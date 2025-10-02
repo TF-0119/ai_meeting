@@ -67,12 +67,11 @@ Meeting(cfg).run()
    python backend/ai_meeting.py \
      --topic "1畳で遊べる新スポーツを仕様化" \
      --precision 6 \
-     --agents Alice Bob Carol \
-    --agents Alice Bob "Carol=議事録を即時に整理する" \
-    --phase-turn-limit discussion=4 \
+     --agents Alice Bob "Carol=議事録を即時に整理する" \
+     --phase-turn-limit discussion=4 \
      --backend ollama
    ```
-   実行すると `logs/<日時_トピック>/` 以下にログ一式が出力されます。
+   実行すると `logs/<日時_トピック>/` 以下にログ一式が出力されます。`--agents` は上記のように半角スペース区切りで参加者名を列挙でき、`名前=systemプロンプト` 形式を混在させると `backend/ai_meeting/cli.py` の `build_agents` で個別のシステムプロンプトが割り当てられます。【F:backend/ai_meeting/cli.py†L20-L116】
 
 ### 主要な CLI オプション
 - `--precision`：1 (発散型)〜10 (厳密型) の指標で温度や自己検証回数を調整します。【F:backend/ai_meeting/config.py†L30-L138】【F:backend/ai_meeting/meeting.py†L28-L45】
