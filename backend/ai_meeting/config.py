@@ -61,6 +61,7 @@ class MeetingConfig(BaseModel):
     chat_max_sentences: int = 2
     chat_max_chars: int = 120
     chat_window: int = 2  # 直近何発言を見せるか
+    chat_context_summary: bool = True  # サマリーをチャット文脈に注入するか
     # --- 以降のステップ用プレースホルダ（Step 0では未使用） ---
     equilibrium: bool = False  # 均衡AI（メタ評価）
     monitor: bool = False  # 監視AI（フェーズ検知）
