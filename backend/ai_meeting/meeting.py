@@ -34,6 +34,9 @@ class Meeting:
         self.history: List[Turn] = []
         self._conversation_summary_points: List[str] = []
         self._conversation_summary_text: str = ""
+        self._agent_memory: Dict[str, List[str]] = {
+            agent.name: list(agent.memory) for agent in self.cfg.agents
+        }
         # backend
         self._test_mode = is_test_mode()
         if self._test_mode:
@@ -231,6 +234,55 @@ class Meeting:
         tail = self.history[-max(1, n):]
         return " / ".join(f"{t.speaker}:{t.content}" for t in tail)
 
+    def _agent_memory_snapshot(self, agent_name: str) -> List[str]:
+        """エージェントの覚書から直近分を取得する。"""
+
+        memory = list(self._agent_memory.get(agent_name, []))
+        window = getattr(self.cfg, "agent_memory_window", 0)
+        if isinstance(window, int) and window > 0:
+            memory = memory[-window:]
+        return memory
+
+    def _format_agent_memory(self, agent_name: str) -> Optional[str]:
+        """プロンプトへ挿入する覚書テキストを生成する。"""
+
+        memory = self._agent_memory_snapshot(agent_name)
+        if not memory:
+            return None
+        bullets = "\n".join(f"- {item}" for item in memory)
+        return f"最近の覚書:\n{bullets}"
+
+    def _record_agent_memory(self, agent_name: str, summary_payload: Dict[str, Any]) -> None:
+        """ターン要約からエージェントの覚書を更新する。"""
+
+        if not self.history:
+            return
+        turn = self.history[-1]
+        existing = self._agent_memory.setdefault(agent_name, [])
+        seen = set(existing)
+        entries: List[str] = []
+        summary_text = ""
+        if isinstance(summary_payload, dict):
+            summary_text = summary_payload.get("summary", "") or ""
+        if summary_text:
+            for line in summary_text.splitlines():
+                clean = re.sub(r"^[\s\-\*\u30fb・•\d\.\)]{0,3}", "", line).strip()
+                if not clean or clean in seen:
+                    continue
+                entries.append(clean)
+                seen.add(clean)
+        fallback = turn.content.strip()
+        if not entries and fallback and fallback not in seen:
+            entries.append(fallback)
+            seen.add(fallback)
+        if not entries:
+            return
+        existing.extend(entries)
+        limit = getattr(self.cfg, "agent_memory_limit", 0)
+        if isinstance(limit, int) and limit > 0 and len(existing) > limit:
+            del existing[:-limit]
+        self._agent_memory[agent_name] = existing
+
     def _think(self, agent: AgentConfig, last_summary: str) -> str:
         sys = (
             "あなたは会議参加者です。これは『内面の思考』であり出力は他者に公開されません。"
@@ -256,6 +308,9 @@ class Meeting:
             "前回の発言者（名前）への応答方針を1文でまとめ、必要なら次の質問を用意する。",
             "次の一手（思考のみ）:",
         ]
+        memory_text = self._format_agent_memory(agent.name)
+        if memory_text:
+            user_lines.insert(1, memory_text)
         user = "\n".join(user_lines)
         req = LLMRequest(
             system=sys,
@@ -548,6 +603,9 @@ class Meeting:
         prior_msgs.append({"role": "user", "content": f"テーマ再掲: {self.cfg.topic}"})
         if agent.style:
             prior_msgs.append({"role": "user", "content": f"話し方のトーン: {agent.style}"})
+        memory_text = self._format_agent_memory(agent.name)
+        if memory_text:
+            prior_msgs.append({"role": "user", "content": memory_text})
         # Step5/7: 非公開ヒント（ショック/コントローラ）。本文に「ヒント」等は書かない。
         # 何も入れない（パラメータ側で制御）
         return LLMRequest(
@@ -819,6 +877,7 @@ class Meeting:
             summary_payload = self._summarize_round(self.history[-1])
             last_summary = self._dedupe_bullets(summary_payload.get("summary", ""))
             summary_payload["summary"] = last_summary
+            self._record_agent_memory(current_speaker.name, summary_payload)
             self._conversation_summary(
                 new_turn=self.history[-1],
                 round_summary=last_summary or None,
@@ -1056,6 +1115,7 @@ class Meeting:
             summary_payload = self._summarize_round(self.history[-1])
             last_summary = self._dedupe_bullets(summary_payload.get("summary", ""))
             summary_payload["summary"] = last_summary
+            self._record_agent_memory(agent.name, summary_payload)
             self._conversation_summary(
                 new_turn=self.history[-1],
                 round_summary=last_summary or None,

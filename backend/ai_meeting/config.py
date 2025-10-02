@@ -16,6 +16,7 @@ class AgentConfig(BaseModel):
     system: str
     style: str = ""  # 口調など任意
     reveal_think: bool = False  # trueだと“思考ログ”も表示（研修用）
+    memory: List[str] = Field(default_factory=list, description="エージェント固有の覚書リスト")
 
 
 @dataclass
@@ -98,6 +99,16 @@ class MeetingConfig(BaseModel):
         ge=32,
         le=2000,
         description="要約プローブに割り当てる最大トークン数。",
+    )
+    agent_memory_limit: int = Field(
+        24,
+        ge=0,
+        description="各エージェントが保持できる覚書の上限数（0で無制限）",
+    )
+    agent_memory_window: int = Field(
+        6,
+        ge=0,
+        description="プロンプトに注入する直近覚書の件数",
     )
     # --- Step 7: KPIフィードバック制御 ---
     kpi_window: int = 6  # 直近W発言でミニKPIを算出
