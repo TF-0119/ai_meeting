@@ -66,13 +66,15 @@
         "name": "Alice",
         "system": "あなたは会議参加者です。日本語で短く発言し、直前の内容に具体的に応答し、次の一手を提示してください。見出し/箇条書き/長い前置きは禁止",
         "style": "",
-        "reveal_think": false
+        "reveal_think": false,
+        "memory": []
       },
       {
         "name": "Bob",
         "system": "あなたは会議参加者です。日本語で短く発言し、直前の内容に具体的に応答し、次の一手を提示してください。見出し/箇条書き/長い前置きは禁止",
         "style": "",
-        "reveal_think": false
+        "reveal_think": false,
+        "memory": []
       }
     ],
     "turns": [
