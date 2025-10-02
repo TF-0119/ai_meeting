@@ -405,6 +405,10 @@ class Meeting:
     def _agent_prompt(self, agent: AgentConfig, last_summary: str) -> LLMRequest:
         # ベースとなる役割プロンプト
         sys_prompt = agent.system
+        last_turn = self.history[-1] if self.history else None
+        last_speaker = last_turn.speaker if last_turn else ""
+        last_content = last_turn.content if last_turn else ""
+
         if not self.cfg.chat_mode:
             # 既存の“発表型”ルール
             sys_prompt += textwrap.dedent(
@@ -414,6 +418,7 @@ class Meeting:
 - 名前: {agent.name}
 - 出力は必ず日本語。簡潔、箇条書き主体。過度な前置きは省略。
 - 先の発言・要約を踏まえ、話を前に進める。
+- 直前の発言（発言者名と要約）に対して具体的に応答する。
 - 最後に「次に誰が何をするべきか」を1行で明示。
                 """
             )
@@ -436,6 +441,13 @@ class Meeting:
             for t in self.history[-self.cfg.chat_window :]:
                 prior_msgs.append({"role": "user", "content": f"{t.speaker}: {t.content}"})
         else:
+            if last_turn:
+                prior_msgs.append(
+                    {
+                        "role": "user",
+                        "content": f"前回の発言者: {last_speaker}\n発言要約: {last_content}",
+                    }
+                )
             if last_summary:
                 prior_msgs.append({"role": "user", "content": f"前ラウンド要約:\n{last_summary}"})
         prior_msgs.append({"role": "user", "content": f"テーマ再掲: {self.cfg.topic}"})
