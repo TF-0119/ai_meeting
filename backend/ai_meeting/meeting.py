@@ -9,7 +9,7 @@ import re
 import textwrap
 import time
 import traceback
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -26,6 +26,47 @@ from .utils import banner, clamp
 from .phase import PhaseState
 
 
+@dataclass(frozen=True)
+class PersonalityTemplate:
+    """エージェントの個性テンプレートを表現するデータ構造。"""
+
+    name: str
+    description: str
+    thinking_guidance: str
+    speaking_guidance: str
+
+    def to_memory_entry(self) -> str:
+        """プロンプト用の覚書形式に整えたテキストを返す。"""
+
+        return f"個性プロファイル({self.name}): {self.description}"
+
+
+PERSONALITY_LIBRARY: Tuple[PersonalityTemplate, ...] = (
+    PersonalityTemplate(
+        name="ASSERTIVE",
+        description="意思決定を急ぎ、明確な行動を求める推進役。",
+        thinking_guidance="思考では結論から逆算し、次に押し切るべき論点を即断で整理すること。",
+        speaking_guidance="発言では断定調でリーダーシップを示し、行動と担当を端的に指示すること。",
+    ),
+    PersonalityTemplate(
+        name="ANALYTICAL",
+        description="データと根拠を重視し、比較検証で合意を導く分析役。",
+        thinking_guidance="思考では選択肢を比較し、欠けている根拠や検証手段を必ず洗い出すこと。",
+        speaking_guidance="発言では根拠→含意→提案の順で整理し、仮説や指標を具体的に示すこと。",
+    ),
+    PersonalityTemplate(
+        name="EMPATHIC",
+        description="相手の感情と懸念をすくい上げ、協調的な合意形成を促す支援役。",
+        thinking_guidance="思考では関係者の感情や懸念を推測し、安心感を与える応答を準備すること。",
+        speaking_guidance="発言では共感を一言添えた上で、負担を分散する具体的な支援策を提案すること。",
+    ),
+)
+
+PERSONALITY_TEMPLATES: Dict[str, PersonalityTemplate] = {
+    template.name: template for template in PERSONALITY_LIBRARY
+}
+
+
 class Meeting:
     """会議の進行を管理するメインクラス。"""
 
@@ -37,6 +78,8 @@ class Meeting:
         self._agent_memory: Dict[str, List[str]] = {
             agent.name: list(agent.memory) for agent in self.cfg.agents
         }
+        self._agent_personality_memory: Dict[str, str] = {}
+        self._personality_profiles: Dict[str, PersonalityTemplate] = {}
         # backend
         self._test_mode = is_test_mode()
         if self._test_mode:
@@ -237,11 +280,16 @@ class Meeting:
     def _agent_memory_snapshot(self, agent_name: str) -> List[str]:
         """エージェントの覚書から直近分を取得する。"""
 
+        entries: List[str] = []
+        personality_note = self._agent_personality_memory.get(agent_name)
+        if personality_note:
+            entries.append(personality_note)
         memory = list(self._agent_memory.get(agent_name, []))
         window = getattr(self.cfg, "agent_memory_window", 0)
         if isinstance(window, int) and window > 0:
             memory = memory[-window:]
-        return memory
+        entries.extend(memory)
+        return entries
 
     def _format_agent_memory(self, agent_name: str) -> Optional[str]:
         """プロンプトへ挿入する覚書テキストを生成する。"""
@@ -283,12 +331,39 @@ class Meeting:
             del existing[:-limit]
         self._agent_memory[agent_name] = existing
 
+    def _assign_personalities(self) -> None:
+        """各エージェントへ個性テンプレートを割り当てる。"""
+
+        if self._personality_profiles:
+            return
+        if not PERSONALITY_LIBRARY:
+            return
+
+        rng = random.Random()
+        if not self._test_mode:
+            rng.seed()
+
+        for idx, agent in enumerate(self.cfg.agents):
+            template = (
+                PERSONALITY_LIBRARY[idx % len(PERSONALITY_LIBRARY)]
+                if self._test_mode
+                else rng.choice(PERSONALITY_LIBRARY)
+            )
+            self._personality_profiles[agent.name] = template
+            profile_text = template.to_memory_entry()
+            self._agent_personality_memory[agent.name] = profile_text
+
     def _think(self, agent: AgentConfig, last_summary: str) -> str:
         sys = (
             "あなたは会議参加者です。これは『内面の思考』であり出力は他者に公開されません。"
             "短く（1〜2文、日本語）、次の一手として有効な案だけを書いてください。"
             "見出し・箇条書き・メタ言及は禁止。"
         )
+        profile = self._personality_profiles.get(agent.name)
+        if profile:
+            sys += (
+                f" あなたの個性は『{profile.name}』。{profile.thinking_guidance}"
+            )
         last_turn = self.history[-1] if self.history else None
         if last_turn:
             # 直前発言の要点を1行にまとめる（思考を相手指向に寄せるため）。
@@ -308,6 +383,8 @@ class Meeting:
             "前回の発言者（名前）への応答方針を1文でまとめ、必要なら次の質問を用意する。",
             "次の一手（思考のみ）:",
         ]
+        if profile:
+            user_lines.insert(1, f"個性プロファイル: {profile.description}")
         memory_text = self._format_agent_memory(agent.name)
         if memory_text:
             user_lines.insert(1, memory_text)
@@ -554,6 +631,7 @@ class Meeting:
         last_turn = self.history[-1] if self.history else None
         last_speaker = last_turn.speaker if last_turn else ""
         last_content = last_turn.content if last_turn else ""
+        profile = self._personality_profiles.get(agent.name)
 
         if not self.cfg.chat_mode:
             # 既存の“発表型”ルール
@@ -578,6 +656,15 @@ class Meeting:
 - 出力は必ず日本語。絵文字・見出し・箇条書き・コードブロックは禁止。
 - {self.cfg.chat_max_sentences}文以内、1文{self.cfg.chat_max_chars}文字以内。冗長な前き禁止。
 - 直前の発言に一言で応答し、具体的な次の一歩を短く示す。
+                """
+            )
+        if profile:
+            sys_prompt += textwrap.dedent(
+                f"""
+                \n--- 個性指針 ---
+- タイプ: {profile.name}
+- 特徴: {profile.description}
+- 発話トーン: {profile.speaking_guidance}
                 """
             )
         # 直近コンテキスト
@@ -730,6 +817,8 @@ class Meeting:
         if goal_default:
             print(f"Phase Goal (default): {goal_default}")
         print()
+
+        self._assign_personalities()
 
         last_summary = ""
         order = self.cfg.agents[:]  # 発言順
