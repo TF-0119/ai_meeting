@@ -32,6 +32,8 @@ class Meeting:
     def __init__(self, cfg: MeetingConfig):
         self.cfg = cfg
         self.history: List[Turn] = []
+        self._conversation_summary_points: List[str] = []
+        self._conversation_summary_text: str = ""
         # backend
         self._test_mode = is_test_mode()
         if self._test_mode:
@@ -402,6 +404,61 @@ class Meeting:
         )
         return self._enforce_chat_constraints(self.backend.generate(req)).strip()
 
+    def _conversation_summary(
+        self,
+        *,
+        new_turn: Optional[Turn] = None,
+        round_summary: Optional[str] = None,
+    ) -> str:
+        """会話全体の要点を蓄積・取得する。"""
+
+        if not hasattr(self, "_conversation_summary_points"):
+            self._conversation_summary_points = []
+        if not hasattr(self, "_conversation_summary_text"):
+            self._conversation_summary_text = ""
+
+        points: List[str] = list(self._conversation_summary_points)
+        if new_turn is None and not round_summary:
+            if self._conversation_summary_text:
+                return self._conversation_summary_text
+            if points:
+                text = "\n".join(f"- {line}" for line in points)
+                self._conversation_summary_text = text
+                return text
+            return ""
+
+        candidate_lines: List[str] = []
+        if round_summary:
+            candidate_lines.extend(round_summary.splitlines())
+        if not candidate_lines and new_turn is not None:
+            content = new_turn.content.strip()
+            if content:
+                candidate_lines.append(f"{new_turn.speaker}: {content}")
+
+        if not candidate_lines:
+            return self._conversation_summary_text
+
+        seen = {line for line in points}
+        for raw in candidate_lines:
+            clean = re.sub(r"^[\s\-\*\u30fb・•\d\.\)]{0,3}", "", raw).strip()
+            if not clean or clean in seen:
+                continue
+            points.append(clean)
+            seen.add(clean)
+
+        window = getattr(self.cfg, "chat_window", 2)
+        try:
+            max_points = max(4, int(window) * 3)
+        except (TypeError, ValueError):  # window が数値でない場合のフォールバック
+            max_points = 8
+        if max_points > 0 and len(points) > max_points:
+            points = points[-max_points:]
+
+        self._conversation_summary_points = points
+        summary_text = "\n".join(f"- {line}" for line in points) if points else ""
+        self._conversation_summary_text = summary_text
+        return summary_text
+
     def _agent_prompt(self, agent: AgentConfig, last_summary: str) -> LLMRequest:
         # ベースとなる役割プロンプト
         sys_prompt = agent.system
@@ -438,6 +495,10 @@ class Meeting:
         prior_msgs: List[Dict[str, str]] = []
         if self.cfg.chat_mode:
             # 直近チャット窓だけを見せる（台本化防止）
+            if getattr(self.cfg, "chat_context_summary", True):
+                summary_text = self._conversation_summary()
+                if summary_text:
+                    prior_msgs.append({"role": "user", "content": f"会話サマリー:\n{summary_text}"})
             for t in self.history[-self.cfg.chat_window :]:
                 prior_msgs.append({"role": "user", "content": f"{t.speaker}: {t.content}"})
         else:
@@ -713,6 +774,10 @@ class Meeting:
             summary_payload = self._summarize_round(self.history[-1])
             last_summary = self._dedupe_bullets(summary_payload.get("summary", ""))
             summary_payload["summary"] = last_summary
+            self._conversation_summary(
+                new_turn=self.history[-1],
+                round_summary=last_summary or None,
+            )
             self.logger.append_summary(
                 round_idx,
                 last_summary,
@@ -946,6 +1011,10 @@ class Meeting:
             summary_payload = self._summarize_round(self.history[-1])
             last_summary = self._dedupe_bullets(summary_payload.get("summary", ""))
             summary_payload["summary"] = last_summary
+            self._conversation_summary(
+                new_turn=self.history[-1],
+                round_summary=last_summary or None,
+            )
             self.logger.append_summary(
                 round_idx,
                 last_summary,

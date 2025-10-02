@@ -40,10 +40,16 @@ def _make_meeting(response: str, agent_names: Optional[List[str]] = None) -> Mee
     meeting.cfg = SimpleNamespace(
         topic="テスト",
         chat_window=2,
-        agents=[SimpleNamespace(name=name) for name in agent_names],
+        chat_mode=True,
+        chat_max_sentences=2,
+        chat_max_chars=120,
+        chat_context_summary=True,
+        agents=[SimpleNamespace(name=name, system="", style="") for name in agent_names],
     )
     meeting.history = []
     meeting.backend = _StubBackend(response)
+    meeting._conversation_summary_points = []
+    meeting._conversation_summary_text = ""
     return meeting
 
 
