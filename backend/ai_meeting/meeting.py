@@ -47,7 +47,6 @@ class Meeting:
         self.critique_passes = rp["critique_passes"]
         self._summary_probe = SummaryProbe(self.backend, self.cfg)
         self._summary_probe_records: List[Dict[str, Any]] = []
-        self._summary_probe_logger: Optional[SummaryProbe] = None
         self._pending = PendingTracker()  # 残課題トラッカー
         self.logger = LiveLogWriter(
             self.cfg.topic,
@@ -451,12 +450,13 @@ class Meeting:
             max_tokens=(180 if self.cfg.chat_mode else self.cfg.max_tokens),
         )
 
-    def _summarize_round(self, new_turn: Turn) -> str:
-        # 最低限のサマライザ（同じLLMを使い回す）
+    def _summarize_round(self, new_turn: Turn) -> Dict[str, Any]:
+        """SummaryProbe のペイロードを生成し返す。"""
+
         result = self._summary_probe.generate_summary(new_turn, self.history)
         if self.cfg.summary_probe_enabled:
             self._summary_probe_records.append(result)
-        return result.get("summary", "")
+        return result
 
     def _log_summary_probe(
         self,
@@ -467,25 +467,23 @@ class Meeting:
         phase_turn: Optional[int],
         phase_kind: Optional[str],
         phase_base: Optional[int],
+        payload: Dict[str, Any],
     ) -> None:
         """要約プローブ結果をログへ安全に書き出す。"""
 
         if not self.cfg.summary_probe_log_enabled:
             return
-        if self._summary_probe_logger is None:
-            self._summary_probe_logger = SummaryProbe(self.backend, self.cfg)
         try:
-            record = self._summary_probe_logger.generate_summary(turn, self.history)
-            payload: Dict[str, Any] = dict(record)
-            payload["round"] = round_idx
+            record: Dict[str, Any] = dict(payload)
+            record["round"] = round_idx
             if phase_id is not None and phase_turn is not None:
                 phase_payload: Dict[str, Any] = {"id": phase_id, "turn": phase_turn}
                 if phase_kind:
                     phase_payload["kind"] = phase_kind
                 if phase_base is not None:
                     phase_payload["base"] = phase_base
-                payload["phase"] = phase_payload
-            self.logger.append_summary_probe(payload)
+                record["phase"] = phase_payload
+            self.logger.append_summary_probe(record)
         except Exception as exc:  # noqa: BLE001 - ログ記録では失敗を握りつぶす
             self.logger.append_warning(
                 "summary_probe_logging_failed",
@@ -700,7 +698,9 @@ class Meeting:
             else:
                 order = order[1:] + order[:1]
 
-            last_summary = self._dedupe_bullets(self._summarize_round(self.history[-1]))
+            summary_payload = self._summarize_round(self.history[-1])
+            last_summary = self._dedupe_bullets(summary_payload.get("summary", ""))
+            summary_payload["summary"] = last_summary
             self.logger.append_summary(
                 round_idx,
                 last_summary,
@@ -716,6 +716,7 @@ class Meeting:
                 phase_turn=phase_turn,
                 phase_kind=current_phase.kind,
                 phase_base=current_phase.legacy_round_base,
+                payload=summary_payload,
             )
             self._pending.add_from_text(last_summary)
             unresolved_count = len(self._pending.items)
@@ -930,7 +931,9 @@ class Meeting:
                 phase_kind=state.kind,
                 phase_base=state.legacy_round_base,
             )
-            last_summary = self._dedupe_bullets(self._summarize_round(self.history[-1]))
+            summary_payload = self._summarize_round(self.history[-1])
+            last_summary = self._dedupe_bullets(summary_payload.get("summary", ""))
+            summary_payload["summary"] = last_summary
             self.logger.append_summary(
                 round_idx,
                 last_summary,
@@ -946,6 +949,7 @@ class Meeting:
                 phase_turn=phase_turn,
                 phase_kind=state.kind,
                 phase_base=state.legacy_round_base,
+                payload=summary_payload,
             )
             unresolved_count = len(self._pending.items)
             self._unresolved_history.append(unresolved_count)

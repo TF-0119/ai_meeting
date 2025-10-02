@@ -63,5 +63,7 @@ def test_summary_probe_logging_appends_json(tmp_path, monkeypatch) -> None:
         assert len(summary_records) == expected_rounds
         assert all("summary" in rec for rec in summary_records)
         assert all(rec.get("type") != "summary_probe" for rec in live_records)
+        assert len(summary_entries) == len(summary_records)
+        assert [rec["summary"] for rec in summary_records] == [entry["summary"] for entry in summary_entries]
     finally:
         shutil.rmtree(meeting.logger.dir, ignore_errors=True)
