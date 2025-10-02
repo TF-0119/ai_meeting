@@ -22,6 +22,7 @@ def test_summary_probe_defaults_and_assignment():
 
     # 既定値では無効化され、ファイル名は定数になる。
     assert cfg.summary_probe_enabled is False
+    assert cfg.summary_probe_log_enabled is False
     assert cfg.summary_probe_filename == "summary_probe.json"
     assert cfg.summary_probe_temperature == 0.4
     assert cfg.summary_probe_max_tokens == 300
@@ -29,6 +30,8 @@ def test_summary_probe_defaults_and_assignment():
     # 代入時に validate_assignment が働くか確認する。
     cfg.summary_probe_enabled = True
     assert cfg.summary_probe_enabled is True
+    cfg.summary_probe_log_enabled = True
+    assert cfg.summary_probe_log_enabled is True
     cfg.summary_probe_temperature = 0.55
     cfg.summary_probe_max_tokens = 512
     assert cfg.summary_probe_temperature == 0.55
@@ -42,12 +45,14 @@ def test_summary_probe_filename_validation():
         topic="要約プローブのファイル名検証",
         agents=_base_agents(),
         summary_probe_enabled=True,
+        summary_probe_log_enabled=True,
         summary_probe_filename="custom_summary.json",
         summary_probe_temperature=0.3,
         summary_probe_max_tokens=256,
     )
 
     assert cfg.summary_probe_enabled is True
+    assert cfg.summary_probe_log_enabled is True
     assert cfg.summary_probe_filename == "custom_summary.json"
     assert cfg.summary_probe_temperature == 0.3
     assert cfg.summary_probe_max_tokens == 256

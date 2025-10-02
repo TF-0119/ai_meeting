@@ -74,6 +74,12 @@ def parse_args() -> argparse.Namespace:
         help="要約プローブを有効化して補助JSONを保存（暫定機能）",
     )
     ap.add_argument(
+        "--summary-probe-log",
+        dest="summary_probe_log_enabled",
+        action="store_true",
+        help="要約プローブ結果を毎ターンJSONLへ保存（暫定）",
+    )
+    ap.add_argument(
         "--summary-probe-filename",
         default="summary_probe.json",
         help="要約プローブの出力ファイル名（暫定）",
@@ -251,6 +257,7 @@ def main() -> None:
         think_mode=getattr(args, "think_mode", True),
         think_debug=getattr(args, "think_debug", True),
         summary_probe_enabled=getattr(args, "summary_probe_enabled", False),
+        summary_probe_log_enabled=getattr(args, "summary_probe_log_enabled", False),
         summary_probe_filename=getattr(args, "summary_probe_filename", "summary_probe.json"),
     )
     cfg.kpi_window = max(1, int(getattr(args, "kpi_window", 6)))
