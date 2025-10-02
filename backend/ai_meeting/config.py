@@ -85,6 +85,18 @@ class MeetingConfig(BaseModel):
     think_debug: bool = True  # thoughts.jsonl に全思考・採点を保存（本文には出さない）
     summary_probe_enabled: bool = False  # 要約プローブ（暫定）を有効化するかどうか
     summary_probe_filename: str = "summary_probe.json"  # 要約プローブの出力ファイル名
+    summary_probe_temperature: float = Field(
+        0.4,
+        ge=0.0,
+        le=2.0,
+        description="要約プローブ時に利用するLLM温度。",
+    )
+    summary_probe_max_tokens: int = Field(
+        300,
+        ge=32,
+        le=2000,
+        description="要約プローブに割り当てる最大トークン数。",
+    )
     # --- Step 7: KPIフィードバック制御 ---
     kpi_window: int = 6  # 直近W発言でミニKPIを算出
     kpi_auto_prompt: bool = True  # 閾値割れで隠しプロンプトを注入

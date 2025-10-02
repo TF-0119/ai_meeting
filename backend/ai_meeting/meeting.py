@@ -20,6 +20,7 @@ from .evaluation import KPIEvaluator
 from .llm import LLMRequest, OllamaBackend, OpenAIBackend
 from .logging import LiveLogWriter
 from .metrics import MetricsLogger
+from .summary_probe import SummaryProbe
 from .testing import NullMetricsLogger, is_test_mode, setup_test_environment
 from .utils import banner, clamp
 from .phase import PhaseState
@@ -44,6 +45,8 @@ class Meeting:
         rp = self.cfg.runtime_params()
         self.temperature = rp["temperature"]
         self.critique_passes = rp["critique_passes"]
+        self._summary_probe = SummaryProbe(self.backend, self.cfg)
+        self._summary_probe_records: List[Dict[str, Any]] = []
         self._pending = PendingTracker()  # 残課題トラッカー
         self.logger = LiveLogWriter(self.cfg.topic, outdir=self.cfg.outdir, ui_minimal=self.cfg.ui_minimal)
         self.equilibrium_enabled = self.cfg.equilibrium
@@ -444,13 +447,10 @@ class Meeting:
 
     def _summarize_round(self, new_turn: Turn) -> str:
         # 最低限のサマライザ（同じLLMを使い回す）
-        req = LLMRequest(
-            system="あなたは議事要約アシスタント。新しい発言を日本語で要点化し、意思決定に重要な差分だけを3〜6点で箇条書きに。",
-            messages=[{"role": "user", "content": new_turn.content}],
-            temperature=0.4,
-            max_tokens=300,
-        )
-        return self.backend.generate(req)
+        result = self._summary_probe.generate_summary(new_turn, self.history)
+        if self.cfg.summary_probe_enabled:
+            self._summary_probe_records.append(result)
+        return result.get("summary", "")
 
     def _critic_pass(self, text: str) -> str:
         # 簡易ファクトチェック／自省（外部Webアクセスなし）
