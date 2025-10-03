@@ -1024,7 +1024,7 @@ class Meeting:
                     "speaker": getattr(new_turn, "speaker", ""),
                 },
             )
-            return {"summary": self._fallback_round_summary(new_turn)}
+            return {"summary": ""}
         return result
 
     def _log_summary_probe(
