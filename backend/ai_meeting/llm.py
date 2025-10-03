@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import typing
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 from urllib.parse import urlparse
 import ipaddress
 
@@ -17,7 +17,7 @@ class LLMRequest(BaseModel):
     messages: list[dict[str, str]]
     temperature: float = 0.7
     max_tokens: int = 800
-    last_turn_detail: Optional[str] = None
+    metadata: dict[str, Any] | None = None
 
 
 class LLMBackend:
