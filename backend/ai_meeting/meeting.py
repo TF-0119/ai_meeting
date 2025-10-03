@@ -203,6 +203,8 @@ class Meeting:
             outdir=self.cfg.outdir,
             ui_minimal=self.cfg.ui_minimal,
             summary_probe_filename=self.cfg.summary_probe_filename,
+            enable_markdown=self.cfg.log_markdown_enabled,
+            enable_jsonl=self.cfg.log_jsonl_enabled,
         )
         self.equilibrium_enabled = self.cfg.equilibrium
         self._monitor = Monitor(self.cfg) if self.cfg.monitor else None
@@ -1393,7 +1395,13 @@ class Meeting:
         except Exception as e:
             print(f"[KPI] 評価で例外: {e}")
 
-        print(f"\n（ライブログ: {self.logger.dir / 'meeting_live.md'} / {self.logger.dir / 'meeting_live.jsonl'}）")
+        live_paths = []
+        if self.logger.md:
+            live_paths.append(str(self.logger.md))
+        if self.logger.jsonl:
+            live_paths.append(str(self.logger.jsonl))
+        if live_paths:
+            print(f"\n（ライブログ: {' / '.join(live_paths)}）")
         result_path = self.logger.dir / "meeting_result.json"
         print(f"\n（保存: {result_path}）")
         base_dir = self.logger.dir
@@ -1406,18 +1414,23 @@ class Meeting:
             except ValueError:
                 return path.name
 
-        artifact_candidates = {
-            "meeting_live_md": self.logger.md,
-            "meeting_live_jsonl": self.logger.jsonl,
-            "meeting_live_html": self.logger.html,
-            "phases_jsonl": self.logger.phase_log,
-            "thoughts_jsonl": self.logger.thoughts_log,
-            "control_jsonl": base_dir / "control.jsonl",
-            "kpi_json": base_dir / "kpi.json",
-            "metrics_csv": base_dir / "metrics.csv",
-            "metrics_cpu_mem_png": base_dir / "metrics_cpu_mem.png",
-            "metrics_gpu_png": base_dir / "metrics_gpu.png",
-        }
+        artifact_candidates: Dict[str, Path] = {}
+        if self.logger.md:
+            artifact_candidates["meeting_live_md"] = self.logger.md
+        if self.logger.jsonl:
+            artifact_candidates["meeting_live_jsonl"] = self.logger.jsonl
+        artifact_candidates.update(
+            {
+                "meeting_live_html": self.logger.html,
+                "phases_jsonl": self.logger.phase_log,
+                "thoughts_jsonl": self.logger.thoughts_log,
+                "control_jsonl": base_dir / "control.jsonl",
+                "kpi_json": base_dir / "kpi.json",
+                "metrics_csv": base_dir / "metrics.csv",
+                "metrics_cpu_mem_png": base_dir / "metrics_cpu_mem.png",
+                "metrics_gpu_png": base_dir / "metrics_gpu.png",
+            }
+        )
         if self.cfg.summary_probe_log_enabled:
             artifact_candidates["summary_probe_json"] = base_dir / self.cfg.summary_probe_filename
         files = {key: _relative(path) for key, path in artifact_candidates.items()}

@@ -70,6 +70,8 @@ class MeetingConfig(BaseModel):
     shock_ttl: int = 2  # ショックを維持するターン数（フェーズ確定後の有効ターン）
     # --- Step 1: UI最小化（台本感を消す表示） ---
     ui_minimal: bool = True  # 役職やRound見出しを出さない
+    log_markdown_enabled: bool = True  # meeting_live.md を生成するかどうか
+    log_jsonl_enabled: bool = True  # meeting_live.jsonl を生成するかどうか
     # --- Step 3: 多様性＆独占ガード ---
     cooldown: float = 0.10  # 直近発言者への減点（0.0-1.0）
     cooldown_span: int = 1  # 何ターン遡ってクールダウンを適用するか
