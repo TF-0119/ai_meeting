@@ -405,7 +405,11 @@ class Meeting:
             normalized = " ".join(last_turn.content.strip().split())
             if len(normalized) > 80:
                 normalized = normalized[:80] + "…"
-            last_turn_detail = f"{last_turn.speaker}: {normalized}" if normalized else f"{last_turn.speaker}: (内容なし)"
+            last_turn_detail = (
+                f"{last_turn.speaker}: {normalized}"
+                if normalized
+                else f"{last_turn.speaker}: (内容なし)"
+            )
         else:
             last_turn_detail = "直前発言なし"
         recent = self._recent_context(self.cfg.chat_window)
@@ -429,7 +433,6 @@ class Meeting:
             messages=[{"role": "user", "content": user}],
             temperature=min(0.9, self.temperature + 0.1),
             max_tokens=120,
-            last_turn_detail=last_turn_detail,
         )
         return self._enforce_chat_constraints(self.backend.generate(req)).strip()
 

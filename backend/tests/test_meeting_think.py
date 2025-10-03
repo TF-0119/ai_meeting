@@ -48,8 +48,8 @@ def test_think_prompt_focuses_on_last_speaker(tmp_path, monkeypatch):
     assert "Bob" in result  # 応答方針に相手の名前が含まれていること
 
     req = captured["req"]
-    assert req.last_turn_detail == "Bob: 議論の現状を整理したので、次は役割分担を決めたい。"
-    assert "last_turn_detail: Bob:" in req.messages[0]["content"]
+    user_prompt = req.messages[0]["content"]
+    assert "last_turn_detail: Bob: 議論の現状を整理したので、次は役割分担を決めたい。" in user_prompt
     assert "前回の発言者（名前）への応答方針を1文でまとめ、必要なら次の質問を用意する。" in req.messages[0]["content"]
 
 
