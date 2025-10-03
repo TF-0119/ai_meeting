@@ -74,11 +74,14 @@ Meeting(cfg).run()
    実行すると `logs/<日時_トピック>/` 以下にログ一式が出力されます。`--agents` は上記のように半角スペース区切りで参加者名を列挙でき、`名前=systemプロンプト` 形式を混在させると `backend/ai_meeting/cli.py` の `build_agents` で個別のシステムプロンプトが割り当てられます。【F:backend/ai_meeting/cli.py†L20-L116】
 
 ### 主要な CLI オプション
+
+CLI のオプション名は `--agent-memory-limit` のようにハイフン区切り（kebab-case）で指定します。構成ファイル側でスネークケースを使う場合も、CLI からは必ずハイフン区切りで入力してください。
 - `--precision`：1 (発散型)〜10 (厳密型) の指標で温度や自己検証回数を調整します。【F:backend/ai_meeting/config.py†L30-L138】【F:backend/ai_meeting/meeting.py†L28-L45】
 - `--agents`：参加者名を順番に指定。`名前=systemプロンプト` 形式を混在させると個別ルールを注入できます。【F:backend/ai_meeting/cli.py†L97-L112】【F:backend/ai_meeting/config.py†L12-L19】
 - `--chat-mode/--no-chat-mode`：短文チャット制約の ON/OFF。文数や文字数制限 (`--chat-max-sentences` / `--chat-max-chars`) も変更可能です。【F:backend/ai_meeting/config.py†L60-L63】【F:backend/ai_meeting/meeting.py†L398-L489】
 - `--phase-turn-limit`：フェーズごとのターン上限を整数または `kind=数値` 形式で指定。複数指定すると種類別に上書きされます。【F:backend/ai_meeting/cli.py†L28-L164】【F:backend/ai_meeting/config.py†L30-L156】
 - `--max-phases` / `--phase-goal`：フェーズ総数の上限や種別ごとの目標文を与えるオプション。ゴールは `kind=文章` 形式で複数指定できます。【F:backend/ai_meeting/cli.py†L20-L188】【F:backend/ai_meeting/config.py†L30-L171】
+- `--agent-memory-limit` / `--agent-memory-window`：各エージェントが保持する覚書の総数と、プロンプトへ注入する直近件数を調整します。未指定時は `MeetingConfig` の既定値（24 件と 6 件）が利用されます。【F:backend/ai_meeting/cli.py†L20-L214】【F:backend/ai_meeting/config.py†L107-L124】
 - `--resolve-round`：残課題をまとめて解消するフェーズを挿入するかどうか。【F:backend/ai_meeting/config.py†L41-L58】【F:backend/ai_meeting/meeting.py†L828-L900】
 - `--rounds`：従来のラウンド数指定。現在は `phase_turn_limit` のエイリアスとして読み替えられ、実行時に非推奨警告が表示されます。【F:backend/ai_meeting/cli.py†L20-L206】【F:backend/ai_meeting/config.py†L30-L171】
 - `--think-mode`：思考→審査→発言 (T3→T1) のプロセスを有効化/無効化します。【F:backend/ai_meeting/config.py†L83-L85】【F:backend/ai_meeting/meeting.py†L543-L618】

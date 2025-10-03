@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import warnings
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Sequence, Union
 
 from backend.defaults import DEFAULT_AGENT_NAMES
 
@@ -13,7 +13,7 @@ from .utils import clamp
 from .meeting import Meeting
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     """CLI 引数を解析して `argparse.Namespace` を返す。"""
 
     ap = argparse.ArgumentParser(description="CLI AI Meeting (multi-agent)")
@@ -66,6 +66,18 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--chat-max-sentences", type=int, default=2)
     ap.add_argument("--chat-max-chars", type=int, default=120)
     ap.add_argument("--chat-window", type=int, default=2)
+    ap.add_argument(
+        "--agent-memory-limit",
+        type=int,
+        default=None,
+        help="各エージェントの覚書保持上限。未指定なら MeetingConfig の既定値を利用",
+    )
+    ap.add_argument(
+        "--agent-memory-window",
+        type=int,
+        default=None,
+        help="プロンプトに含める覚書数。未指定なら MeetingConfig の既定値を利用",
+    )
     ap.add_argument("--outdir", default=None, help="ログ出力先ディレクトリ（未指定なら自動生成）")
     ap.add_argument(
         "--summary-probe",
@@ -130,7 +142,7 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         help="従来の見出し・役職ラベルを表示（台本風UIに戻す）",
     )
-    return ap.parse_args()
+    return ap.parse_args(argv)
 
 
 def build_agents(tokens: List[str]) -> List[AgentConfig]:
@@ -204,10 +216,9 @@ def _parse_phase_goal(tokens: List[str]) -> Optional[Union[str, Dict[str, str]]]
     return default_text
 
 
-def main() -> None:
-    """CLI エントリーポイント。"""
+def build_meeting_config(args: argparse.Namespace) -> MeetingConfig:
+    """`argparse.Namespace` から `MeetingConfig` を構築する。"""
 
-    args = parse_args()
     agents = build_agents(args.agents)
     try:
         phase_limit = _parse_phase_turn_limit(getattr(args, "phase_turn_limit", []))
@@ -220,6 +231,9 @@ def main() -> None:
         warnings.warn("--rounds は非推奨です。phase_turn_limit に読み替えます。", DeprecationWarning)
         if phase_limit is None:
             phase_limit = max(0, int(rounds_value))
+
+    agent_memory_limit_default = MeetingConfig.model_fields["agent_memory_limit"].default
+    agent_memory_window_default = MeetingConfig.model_fields["agent_memory_window"].default
 
     cfg = MeetingConfig(
         topic=args.topic,
@@ -238,6 +252,12 @@ def main() -> None:
         chat_max_sentences=args.chat_max_sentences,
         chat_max_chars=args.chat_max_chars,
         chat_window=args.chat_window,
+        agent_memory_limit=max(0, int(args.agent_memory_limit))
+        if args.agent_memory_limit is not None
+        else agent_memory_limit_default,
+        agent_memory_window=max(0, int(args.agent_memory_window))
+        if args.agent_memory_window is not None
+        else agent_memory_window_default,
         outdir=getattr(args, "outdir", None),
         equilibrium=getattr(args, "equilibrium", False),
         monitor=getattr(args, "monitor", False),
@@ -267,4 +287,12 @@ def main() -> None:
     cfg.th_decision_min = max(0.0, float(getattr(args, "th_decision_min", 0.40)))
     cfg.th_progress_stall = max(1, int(getattr(args, "th_progress_stall", 3)))
 
+    return cfg
+
+
+def main() -> None:
+    """CLI エントリーポイント。"""
+
+    args = parse_args()
+    cfg = build_meeting_config(args)
     Meeting(cfg).run()
