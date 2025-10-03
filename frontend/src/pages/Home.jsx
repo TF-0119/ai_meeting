@@ -33,10 +33,15 @@ export default function Home() {
       backend: "ollama",
       model: "",
       openaiKeyRequired: false,
+      phaseTurnLimit: "",
+      maxPhases: "",
+      chatMode: true,
+      chatMaxSentences: "",
     },
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -76,17 +81,104 @@ export default function Home() {
       const agentsTrimmed = formState.agents.trim();
       const backendTrimmed = formState.backend.trim();
       const modelTrimmed = formState.model.trim();
+      const maxPhasesTrimmed = formState.maxPhases.trim();
+      const chatMaxSentencesTrimmed = formState.chatMaxSentences.trim();
+
+      const parseBoundedInt = (value, label, { min, max }) => {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
+          throw new Error(`${label}は整数で入力してください。`);
+        }
+        if (typeof min === "number" && numeric < min) {
+          throw new Error(`${label}は${min}以上で入力してください。`);
+        }
+        if (typeof max === "number" && numeric > max) {
+          throw new Error(`${label}は${max}以下で入力してください。`);
+        }
+        return numeric;
+      };
+
+      const parsePhaseTurnLimit = (value) => {
+        const trimmed = value.trim();
+        if (!trimmed) return [];
+        const tokens = trimmed.split(/[\s,]+/).filter(Boolean);
+        if (!tokens.length) return [];
+        return tokens.map((token) => {
+          if (token.includes("=")) {
+            const [nameRaw, numRaw] = token.split("=", 2);
+            const name = nameRaw.trim();
+            if (!name) {
+              throw new Error("フェーズターン上限のキーが空です。");
+            }
+            const numeric = parseBoundedInt(numRaw, "フェーズターン上限", { min: 1, max: 12 });
+            return `${name}=${numeric}`;
+          }
+          const numeric = parseBoundedInt(token, "フェーズターン上限", { min: 1, max: 12 });
+          return numeric;
+        });
+      };
+
+      const phaseTurnLimitTokens = parsePhaseTurnLimit(formState.phaseTurnLimit ?? "");
+      const maxPhasesValue = maxPhasesTrimmed
+        ? parseBoundedInt(maxPhasesTrimmed, "フェーズ数の上限", { min: 1, max: 10 })
+        : undefined;
+      const chatMaxSentencesValue = chatMaxSentencesTrimmed
+        ? parseBoundedInt(chatMaxSentencesTrimmed, "チャット最大文数", { min: 1, max: 6 })
+        : undefined;
 
       const payload = {
         topic: trimmedTopic,
         precision: precisionValue,
         rounds: roundsValue,
         agents: agentsTrimmed || undefined,
-        options: {
-          llmBackend: backendTrimmed || undefined,
-          model: modelTrimmed || undefined,
-        },
+        backend: backendTrimmed || undefined,
       };
+
+      const optionsPayload = {};
+      const llmOptions = {};
+      if (backendTrimmed) {
+        llmOptions.backend = backendTrimmed;
+      }
+      if (modelTrimmed) {
+        if (backendTrimmed === "openai") {
+          llmOptions.openaiModel = modelTrimmed;
+        } else if (backendTrimmed === "ollama") {
+          llmOptions.ollamaModel = modelTrimmed;
+        } else {
+          llmOptions.model = modelTrimmed;
+        }
+      }
+      if (Object.keys(llmOptions).length > 0) {
+        optionsPayload.llm = llmOptions;
+      }
+
+      const flowOptions = {};
+      if (phaseTurnLimitTokens.length === 1) {
+        flowOptions.phaseTurnLimit = phaseTurnLimitTokens[0];
+      } else if (phaseTurnLimitTokens.length > 1) {
+        flowOptions.phaseTurnLimit = phaseTurnLimitTokens;
+      }
+      if (typeof maxPhasesValue === "number") {
+        flowOptions.maxPhases = maxPhasesValue;
+      }
+      if (Object.keys(flowOptions).length > 0) {
+        optionsPayload.flow = flowOptions;
+      }
+
+      const chatOptions = {};
+      if (!formState.chatMode) {
+        chatOptions.chatMode = false;
+      }
+      if (typeof chatMaxSentencesValue === "number") {
+        chatOptions.chatMaxSentences = chatMaxSentencesValue;
+      }
+      if (Object.keys(chatOptions).length > 0) {
+        optionsPayload.chat = chatOptions;
+      }
+
+      if (Object.keys(optionsPayload).length > 0) {
+        payload.options = optionsPayload;
+      }
       const data = await startMeeting(payload);
       const outdir = typeof data.outdir === "string" ? data.outdir.replace(/\\/g, "/") : "";
       const match = outdir.startsWith("logs/") ? outdir.slice(5) : outdir;
@@ -175,6 +267,71 @@ export default function Home() {
             )}
           </label>
         </div>
+
+        <details
+          className="advanced"
+          open={advancedOpen}
+          onToggle={(event) => setAdvancedOpen(event.target.open)}
+        >
+          <summary className="advanced-summary">高度な設定</summary>
+          <div className="advanced-content">
+            <div className="advanced-grid">
+              <label className="label">
+                フェーズターン上限
+                <input
+                  className="input"
+                  value={formState.phaseTurnLimit}
+                  onChange={(e) => dispatch({ type: "update", field: "phaseTurnLimit", value: e.target.value })}
+                  placeholder="例: discussion=2 resolution=1"
+                />
+                <div className="hint">
+                  空白またはカンマで区切って複数指定できます。数値のみの場合は全フェーズ共通の上限になります。
+                </div>
+              </label>
+
+              <label className="label">
+                フェーズ数の上限
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={formState.maxPhases}
+                  onChange={(e) => dispatch({ type: "update", field: "maxPhases", value: e.target.value })}
+                  placeholder="未設定"
+                />
+                <div className="hint">1〜10 の範囲で指定できます。空欄にすると自動判定に任せます。</div>
+              </label>
+
+              <div className="label advanced-chat-section">
+                <div className="advanced-chat-title">短文チャットモード</div>
+                <label className="advanced-chat-toggle">
+                  <input
+                    type="checkbox"
+                    checked={formState.chatMode}
+                    onChange={(e) => dispatch({ type: "update", field: "chatMode", value: e.target.checked })}
+                  />
+                  <span>短文チャットを有効にする</span>
+                </label>
+                <div className="hint">既定では有効です。オフにすると従来の長文モードで進行します。</div>
+              </div>
+
+              <label className="label">
+                チャット最大文数
+                <input
+                  className="input"
+                  type="number"
+                  min={1}
+                  max={6}
+                  value={formState.chatMaxSentences}
+                  onChange={(e) => dispatch({ type: "update", field: "chatMaxSentences", value: e.target.value })}
+                  placeholder="2 (既定)"
+                />
+                <div className="hint">1〜6 の範囲で設定できます。空欄なら既定値 2 を利用します。</div>
+              </label>
+            </div>
+          </div>
+        </details>
 
         <div className="actions">
           <button className="btn" type="submit" disabled={!formState.topic.trim() || loading || formState.openaiKeyRequired}>
