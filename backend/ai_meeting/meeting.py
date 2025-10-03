@@ -74,7 +74,6 @@ class Meeting:
         self.cfg = cfg
         self.history: List[Turn] = []
         self._conversation_summary_points: List[str] = []
-        self._conversation_summary_text: str = ""
         self._agent_memory: Dict[str, List[str]] = {
             agent.name: list(agent.memory) for agent in self.cfg.agents
         }
@@ -94,7 +93,6 @@ class Meeting:
         self.temperature = rp["temperature"]
         self.critique_passes = rp["critique_passes"]
         self._summary_probe = SummaryProbe(self.backend, self.cfg)
-        self._summary_probe_records: List[Dict[str, Any]] = []
         self._pending = PendingTracker()  # 残課題トラッカー
         self.logger = LiveLogWriter(
             self.cfg.topic,
@@ -618,18 +616,10 @@ class Meeting:
 
         if not hasattr(self, "_conversation_summary_points"):
             self._conversation_summary_points = []
-        if not hasattr(self, "_conversation_summary_text"):
-            self._conversation_summary_text = ""
 
-        points: List[str] = list(self._conversation_summary_points)
+        points: List[str] = self._conversation_summary_points
         if new_turn is None and not round_summary:
-            if self._conversation_summary_text:
-                return self._conversation_summary_text
-            if points:
-                text = "\n".join(f"- {line}" for line in points)
-                self._conversation_summary_text = text
-                return text
-            return ""
+            return self._format_conversation_summary(points)
 
         candidate_lines: List[str] = []
         if round_summary:
@@ -640,7 +630,7 @@ class Meeting:
                 candidate_lines.append(f"{new_turn.speaker}: {content}")
 
         if not candidate_lines:
-            return self._conversation_summary_text
+            return self._format_conversation_summary(points)
 
         seen = {line for line in points}
         for raw in candidate_lines:
@@ -656,12 +646,17 @@ class Meeting:
         except (TypeError, ValueError):  # window が数値でない場合のフォールバック
             max_points = 8
         if max_points > 0 and len(points) > max_points:
-            points = points[-max_points:]
+            del points[:-max_points]
 
-        self._conversation_summary_points = points
-        summary_text = "\n".join(f"- {line}" for line in points) if points else ""
-        self._conversation_summary_text = summary_text
-        return summary_text
+        return self._format_conversation_summary(points)
+
+    @staticmethod
+    def _format_conversation_summary(points: List[str]) -> str:
+        """会話サマリーの箇条書き文字列を生成する。"""
+
+        if not points:
+            return ""
+        return "\n".join(f"- {line}" for line in points)
 
     def _agent_prompt(self, agent: AgentConfig, last_summary: str) -> LLMRequest:
         # ベースとなる役割プロンプト
@@ -744,8 +739,6 @@ class Meeting:
         """SummaryProbe のペイロードを生成し返す。"""
 
         result = self._summary_probe.generate_summary(new_turn, self.history)
-        if self.cfg.summary_probe_enabled:
-            self._summary_probe_records.append(result)
         return result
 
     def _log_summary_probe(

@@ -91,3 +91,24 @@ def test_agent_prompt_skips_summary_when_disabled(tmp_path, monkeypatch):
     assert not req.messages[0]["content"].startswith("会話サマリー:")
     assert req.messages[0]["content"] == f"Bob: {meeting.history[-2].content}"
     assert req.messages[1]["content"] == f"Carol: {meeting.history[-1].content}"
+
+
+def test_conversation_summary_returns_expected_text(tmp_path, monkeypatch):
+    """会話サマリーが箇条書き文字列として再取得できることを検証する。"""
+
+    meeting = _build_meeting(tmp_path, monkeypatch, chat_mode=True, chat_window=2)
+    turn = Turn(speaker="Bob", content="対応策を提案する")
+
+    first_summary = meeting._conversation_summary(new_turn=turn)
+    assert first_summary == "- Bob: 対応策を提案する"
+
+    updated_summary = meeting._conversation_summary(
+        round_summary="- 決定: 実施する\n1) 次のタスクを準備"
+    )
+    assert updated_summary.splitlines() == [
+        "- Bob: 対応策を提案する",
+        "- 決定: 実施する",
+        "- 次のタスクを準備",
+    ]
+    # 引数なしで再取得しても同じ文字列が返る
+    assert meeting._conversation_summary() == updated_summary

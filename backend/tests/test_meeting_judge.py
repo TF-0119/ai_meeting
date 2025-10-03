@@ -49,7 +49,6 @@ def _make_meeting(response: str, agent_names: Optional[List[str]] = None) -> Mee
     meeting.history = []
     meeting.backend = _StubBackend(response)
     meeting._conversation_summary_points = []
-    meeting._conversation_summary_text = ""
     return meeting
 
 
@@ -146,7 +145,6 @@ def test_judge_thoughts_prompt_includes_summaries() -> None:
     meeting = _make_meeting("{}", ["Alice"])
     meeting.history = [SimpleNamespace(speaker="Alice", content="こんにちは")]
     meeting._conversation_summary_points = ["Alice: こんにちは"]
-    meeting._conversation_summary_text = "- Alice: こんにちは"
     last_summary = "前回のまとめ"
     flow_summary = meeting._conversation_summary()
 
