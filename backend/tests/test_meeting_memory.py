@@ -42,6 +42,12 @@ def _build_meeting(
     return Meeting(cfg)
 
 
+def _memory_texts(meeting: Meeting, agent_name: str) -> list[str]:
+    """指定エージェントの覚書本文だけを抽出するヘルパー。"""
+
+    return [entry.text for entry in meeting._agent_memory.get(agent_name, [])]
+
+
 def test_record_agent_memory_appends_and_trims(tmp_path, monkeypatch):
     """ターンごとの要約がエージェントメモリに追記され上限で切り詰められることを検証する。"""
 
@@ -51,12 +57,15 @@ def test_record_agent_memory_appends_and_trims(tmp_path, monkeypatch):
     meeting.history.append(Turn(speaker=agent.name, content="最初の提案を共有。"))
     meeting._record_agent_memory(agent.name, {"summary": "- 決定: 提案を採用\n- 次: 実行プランを策定"})
 
-    assert meeting._agent_memory[agent.name] == ["決定: 提案を採用", "次: 実行プランを策定"]
+    assert _memory_texts(meeting, agent.name) == [
+        "決定: 提案を採用",
+        "次: 実行プランを策定",
+    ]
 
     meeting.history.append(Turn(speaker=agent.name, content="進捗を報告。"))
     meeting._record_agent_memory(agent.name, {"summary": "- 進捗: 実装を開始"})
 
-    assert meeting._agent_memory[agent.name] == [
+    assert _memory_texts(meeting, agent.name) == [
         "決定: 提案を採用",
         "次: 実行プランを策定",
         "進捗: 実装を開始",
@@ -65,12 +74,41 @@ def test_record_agent_memory_appends_and_trims(tmp_path, monkeypatch):
     meeting.history.append(Turn(speaker=agent.name, content="懸念点を共有。"))
     meeting._record_agent_memory(agent.name, {"summary": "- 注意: 期限が厳しい"})
 
-    # 上限3のため最古の1件が捨てられ、直近3件が残る
-    assert meeting._agent_memory[agent.name] == [
+    # 上限3のため低優先度の進捗メモが捨てられ、重要度の高い決定事項が保持される
+    assert _memory_texts(meeting, agent.name) == [
+        "決定: 提案を採用",
         "次: 実行プランを策定",
-        "進捗: 実装を開始",
         "注意: 期限が厳しい",
     ]
+
+
+def test_priority_trimming_preserves_high_value_entries(tmp_path, monkeypatch):
+    """優先度スコアに基づいて低重要度の覚書が優先的に削除されることを検証する。"""
+
+    meeting = _build_meeting(tmp_path, monkeypatch, memory_limit=3)
+    agent = meeting.cfg.agents[0]
+
+    meeting.history.append(Turn(speaker=agent.name, content="情報共有1"))
+    meeting._record_agent_memory(agent.name, {"summary": "- 情報: 参考資料を確認"})
+
+    meeting.history.append(Turn(speaker=agent.name, content="情報共有2"))
+    meeting._record_agent_memory(agent.name, {"summary": "- メモ: 補足事項"})
+
+    meeting.history.append(Turn(speaker=agent.name, content="意思決定"))
+    meeting._record_agent_memory(agent.name, {"summary": "- 決定: 承認して次工程へ"})
+
+    meeting.history.append(Turn(speaker=agent.name, content="追加情報"))
+    meeting._record_agent_memory(agent.name, {"summary": "- 情報: 別件の連絡"})
+
+    texts = _memory_texts(meeting, agent.name)
+    assert "決定: 承認して次工程へ" in texts
+    assert "メモ: 補足事項" not in texts, "低優先度のメモが先に削除されること"
+    assert texts[0] == "情報: 参考資料を確認"
+    assert texts[-1] == "情報: 別件の連絡"
+
+    categories = [entry.category for entry in meeting._agent_memory[agent.name]]
+    assert "decision" in categories
+    assert categories.count("note") == 0
 
 
 def test_record_agent_memory_broadcasts_to_all_agents(tmp_path, monkeypatch):
@@ -97,13 +135,13 @@ def test_record_agent_memory_broadcasts_to_all_agents(tmp_path, monkeypatch):
         speaker_name=speaker.name,
     )
 
-    assert meeting._agent_memory[speaker.name] == [
+    assert _memory_texts(meeting, speaker.name) == [
         "決定: プロトタイプを作成",
         "次: レビューの準備",
     ]
 
     for listener in others:
-        assert meeting._agent_memory[listener.name] == [
+        assert _memory_texts(meeting, listener.name) == [
             f"{speaker.name}の発言: 決定: プロトタイプを作成",
             f"{speaker.name}の発言: 次: レビューの準備",
         ]
@@ -115,12 +153,12 @@ def test_record_agent_memory_broadcasts_to_all_agents(tmp_path, monkeypatch):
         speaker_name=speaker.name,
     )
 
-    assert meeting._agent_memory[speaker.name] == [
+    assert _memory_texts(meeting, speaker.name) == [
         "決定: プロトタイプを作成",
         "次: レビューの準備",
     ]
     for listener in others:
-        assert meeting._agent_memory[listener.name] == [
+        assert _memory_texts(meeting, listener.name) == [
             f"{speaker.name}の発言: 決定: プロトタイプを作成",
             f"{speaker.name}の発言: 次: レビューの準備",
         ]
@@ -132,14 +170,14 @@ def test_record_agent_memory_broadcasts_to_all_agents(tmp_path, monkeypatch):
         speaker_name=speaker.name,
     )
 
-    assert meeting._agent_memory[speaker.name] == [
+    assert _memory_texts(meeting, speaker.name) == [
         "決定: プロトタイプを作成",
         "次: レビューの準備",
         "注意: スケジュールを見直す",
     ]
 
     for listener in others:
-        assert meeting._agent_memory[listener.name] == [
+        assert _memory_texts(meeting, listener.name) == [
             f"{speaker.name}の発言: 決定: プロトタイプを作成",
             f"{speaker.name}の発言: 次: レビューの準備",
             f"{speaker.name}の発言: 注意: スケジュールを見直す",

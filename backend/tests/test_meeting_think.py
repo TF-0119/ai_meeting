@@ -59,7 +59,9 @@ def test_think_prompt_includes_agent_memory(tmp_path, monkeypatch):
     meeting = _build_meeting(tmp_path, monkeypatch)
     meeting._assign_personalities()
     agent = meeting.cfg.agents[0]
-    meeting._agent_memory[agent.name].append("重要顧客との約束を最優先で守る")
+    meeting._agent_memory[agent.name].append(
+        meeting._create_memory_entry("重要顧客との約束を最優先で守る", category="info")
+    )
 
     captured = {}
 

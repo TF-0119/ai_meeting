@@ -67,6 +67,52 @@ PERSONALITY_TEMPLATES: Dict[str, PersonalityTemplate] = {
 }
 
 
+@dataclass(frozen=True)
+class MemoryEntry:
+    """エージェントが保持する覚書1件分の構造。"""
+
+    text: str
+    category: str
+    priority: float
+    created_at: float
+
+
+# 覚書の分類ラベルを判別するためのエイリアス定義
+MEMORY_CATEGORY_ALIASES: Dict[str, str] = {
+    "決定": "decision",
+    "決定事項": "decision",
+    "合意事項": "decision",
+    "todo": "todo",
+    "to-do": "todo",
+    "次": "todo",
+    "アクション": "todo",
+    "対応": "todo",
+    "残課題": "unresolved",
+    "課題": "unresolved",
+    "未解決": "unresolved",
+    "懸念": "risk",
+    "リスク": "risk",
+    "注意": "risk",
+    "警戒": "risk",
+    "進捗": "progress",
+    "情報": "info",
+    "メモ": "note",
+    "memo": "note",
+}
+
+
+# 覚書カテゴリーごとの既定優先度
+MEMORY_CATEGORY_PRIORITY: Dict[str, float] = {
+    "decision": 1.0,
+    "unresolved": 0.9,
+    "todo": 0.88,
+    "risk": 0.85,
+    "progress": 0.75,
+    "info": 0.6,
+    "note": 0.5,
+}
+
+
 def _resolve_personality_seed(cfg: MeetingConfig, test_mode: bool) -> Optional[int]:
     """個性テンプレート抽選用の乱数シードを決定する。"""
 
@@ -122,9 +168,19 @@ class Meeting:
         self.cfg = cfg
         self.history: List[Turn] = []
         self._conversation_summary_points: List[str] = []
-        self._agent_memory: Dict[str, List[str]] = {
-            agent.name: list(agent.memory) for agent in self.cfg.agents
-        }
+        self._memory_clock: float = 0.0
+        self._agent_memory: Dict[str, List[MemoryEntry]] = {}
+        for agent in self.cfg.agents:
+            entries: List[MemoryEntry] = []
+            for memo in agent.memory:
+                if not isinstance(memo, str):
+                    continue
+                clean = memo.strip()
+                if not clean:
+                    continue
+                category = self._infer_memory_category(clean)
+                entries.append(self._create_memory_entry(clean, category=category))
+            self._agent_memory[agent.name] = entries
         self._agent_personality_memory: Dict[str, str] = {}
         self._personality_profiles: Dict[str, PersonalityTemplate] = {}
         # backend
@@ -323,6 +379,47 @@ class Meeting:
         tail = self.history[-max(1, n):]
         return " / ".join(f"{t.speaker}:{t.content}" for t in tail)
 
+    def _next_memory_timestamp(self) -> float:
+        """覚書の生成順序を追跡するための単調増加タイムスタンプを返す。"""
+
+        self._memory_clock += 1.0
+        return self._memory_clock
+
+    def _infer_memory_category(self, text: str) -> str:
+        """覚書テキストから分類ラベルを推定する。"""
+
+        token = ""
+        match = re.match(r"^[\[{(\s]*([^:：\]\)}]+)", text)
+        if match:
+            token = match.group(1)
+        if not token:
+            parts = re.split(r"[:：]", text, maxsplit=1)
+            if len(parts) > 1:
+                token = parts[0]
+        normalized = token.strip().strip("[]{}()\u3000 ").lower()
+        if not normalized:
+            return "note"
+        return MEMORY_CATEGORY_ALIASES.get(normalized, "note")
+
+    def _score_memory_priority(self, category: str, text: str) -> float:
+        """覚書の優先度スコアを算出する。"""
+
+        base = MEMORY_CATEGORY_PRIORITY.get(category, MEMORY_CATEGORY_PRIORITY["note"])
+        urgent_keywords = ("期限", "締切", "緊急", "critical", "重要")
+        if any(keyword in text for keyword in urgent_keywords):
+            base += 0.05
+        return clamp(base, 0.0, 1.0)
+
+    def _create_memory_entry(
+        self, text: str, *, category: Optional[str] = None, priority: Optional[float] = None
+    ) -> MemoryEntry:
+        """覚書テキストから `MemoryEntry` を生成する。"""
+
+        normalized = text.strip()
+        inferred_category = category or self._infer_memory_category(normalized)
+        score = priority if priority is not None else self._score_memory_priority(inferred_category, normalized)
+        return MemoryEntry(text=normalized, category=inferred_category, priority=score, created_at=self._next_memory_timestamp())
+
     def _agent_memory_snapshot(self, agent_name: str) -> List[str]:
         """エージェントの覚書から直近分を取得する。"""
 
@@ -330,11 +427,11 @@ class Meeting:
         personality_note = self._agent_personality_memory.get(agent_name)
         if personality_note:
             entries.append(personality_note)
-        memory = list(self._agent_memory.get(agent_name, []))
+        memory_entries = list(self._agent_memory.get(agent_name, []))
         window = getattr(self.cfg, "agent_memory_window", 0)
         if isinstance(window, int) and window > 0:
-            memory = memory[-window:]
-        entries.extend(memory)
+            memory_entries = memory_entries[-window:]
+        entries.extend(entry.text for entry in memory_entries)
         return entries
 
     def _format_agent_memory(self, agent_name: str) -> Optional[str]:
@@ -422,23 +519,34 @@ class Meeting:
             if not isinstance(name, str):
                 continue
             existing = self._agent_memory.setdefault(name, [])
-            seen = set(existing)
-            new_entries: List[str] = []
+            seen_texts = {entry.text for entry in existing}
+            appended = False
             for entry in base_entries:
+                category = self._infer_memory_category(entry)
                 if speaker_name and name != speaker_name:
                     item = f"{speaker_name}の発言: {entry}"
                 else:
                     item = entry
-                if item in seen:
+                if item in seen_texts:
                     continue
-                new_entries.append(item)
-                seen.add(item)
-            if not new_entries:
+                new_entry = self._create_memory_entry(item, category=category)
+                existing.append(new_entry)
+                seen_texts.add(item)
+                appended = True
+            if not appended:
                 continue
-            existing.extend(new_entries)
             if isinstance(limit, int) and limit > 0 and len(existing) > limit:
-                del existing[:-limit]
-            self._agent_memory[name] = existing
+                overflow = len(existing) - limit
+                removal_order = sorted(
+                    range(len(existing)),
+                    key=lambda idx: (existing[idx].priority, existing[idx].created_at),
+                )
+                remove_indices = set(removal_order[:overflow])
+                trimmed = [
+                    entry for idx, entry in enumerate(existing) if idx not in remove_indices
+                ]
+                existing = trimmed
+            self._agent_memory[name] = list(existing)
 
     def _assign_personalities(self) -> None:
         """各エージェントへ個性テンプレートを割り当てる。"""
@@ -1482,4 +1590,3 @@ class Meeting:
             if r <= acc:
                 return name
         return pairs[0][0]  # フォールバック
-
