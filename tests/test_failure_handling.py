@@ -77,7 +77,7 @@ def test_record_agent_memory_skips_invalid_summary(monkeypatch: pytest.MonkeyPat
         meeting._record_agent_memory(["Alice"], {"summary": ["誤った形式"]}, speaker_name="Alice")
 
         memory = meeting._agent_memory.get("Alice")
-        assert memory and memory[-1] == "正しい発言"
+        assert memory and memory[-1].text == "正しい発言"
 
         warnings = _read_warnings(meeting.logger.jsonl)
         assert warnings, "agent_memory_invalid_summary_text の警告が出力されること"
