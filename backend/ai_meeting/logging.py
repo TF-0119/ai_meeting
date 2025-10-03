@@ -18,14 +18,19 @@ class LiveLogWriter:
         outdir: Optional[str] = None,
         ui_minimal: bool = True,
         summary_probe_filename: str = "summary_probe.json",
+        *,
+        enable_markdown: bool = True,
+        enable_jsonl: bool = True,
     ):
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         safe_topic = "".join(c if c.isalnum() or c in "-_（）()[]" else "_" for c in topic)[:80]
         base_dir = Path(outdir or f"logs/{ts}_{safe_topic}")
         base_dir.mkdir(parents=True, exist_ok=True)
         self.dir = base_dir
-        self.md = base_dir / "meeting_live.md"
-        self.jsonl = base_dir / "meeting_live.jsonl"
+        self.enable_markdown = enable_markdown
+        self.enable_jsonl = enable_jsonl
+        self.md: Optional[Path] = base_dir / "meeting_live.md" if enable_markdown else None
+        self.jsonl: Optional[Path] = base_dir / "meeting_live.jsonl" if enable_jsonl else None
         self.html = base_dir / "meeting_live.html"
         self.ui_minimal = ui_minimal
         self.phase_log = base_dir / "phases.jsonl"
@@ -34,20 +39,22 @@ class LiveLogWriter:
         self.summary_probe_log = base_dir / summary_probe_filename
 
         # ヘッダを書いておく
-        with self.md.open("w", encoding="utf-8", newline="\n") as f:
-            if self.ui_minimal:
-                f.write(f"【Topic】{topic}（開始: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}）\n\n")
-            else:
-                f.write(
-                    (
-                        f"# Topic: {topic}\n\n"
-                        f"- 開始: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-                        "- ログ形式: ラウンドごとに追記\n\n"
+        if self.md:
+            with self.md.open("w", encoding="utf-8", newline="\n") as f:
+                if self.ui_minimal:
+                    f.write(f"【Topic】{topic}（開始: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}）\n\n")
+                else:
+                    f.write(
+                        (
+                            f"# Topic: {topic}\n\n"
+                            f"- 開始: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                            "- ログ形式: ラウンドごとに追記\n\n"
+                        )
                     )
-                )
-            f.flush()
+                f.flush()
         # JSONLは空ファイル作成のみ
-        self.jsonl.touch()
+        if self.jsonl:
+            self.jsonl.touch()
         self.thoughts_log.touch()
         self.summary_probe_log.touch()
 
@@ -67,23 +74,24 @@ class LiveLogWriter:
 
         line = content.strip()
         line = re.sub(r"^\s*[#>\-\*\u30fb・]+", "", line, flags=re.MULTILINE)
-        with self.md.open("a", encoding="utf-8", newline="\n") as f:
-            f.write(f"{speaker}: {line}\n\n")
-            f.flush()
-        record = {
-            "ts": datetime.now().isoformat(timespec="seconds"),
-            "type": "turn",
-            "round": round_idx,
-            "turn": turn_idx,
-            "speaker": speaker,
-            "content": content,
-        }
-        phase_info = self._phase_record(phase_id, phase_turn, phase_kind, phase_base)
-        if phase_info:
-            record["phase"] = phase_info
-        with self.jsonl.open("a", encoding="utf-8", newline="\n") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            f.flush()
+        if self.md:
+            with self.md.open("a", encoding="utf-8", newline="\n") as f:
+                f.write(f"{speaker}: {line}\n\n")
+                f.flush()
+        record = self._create_record(
+            "turn",
+            {
+                "round": round_idx,
+                "turn": turn_idx,
+                "speaker": speaker,
+                "content": content,
+            },
+            phase_id=phase_id,
+            phase_turn=phase_turn,
+            phase_kind=phase_kind,
+            phase_base=phase_base,
+        )
+        self._append_jsonl(record)
 
     def append_phase(self, payload):
         """フェーズ検知の結果を JSONL に追記する。"""
@@ -123,27 +131,28 @@ class LiveLogWriter:
         """ラウンド要約を追記する。"""
 
         text = summary.strip()
-        if self.ui_minimal:
-            tag = "要約"
-            with self.md.open("a", encoding="utf-8", newline="\n") as f:
-                f.write(f"（{tag}）{text}\n\n")
-                f.flush()
-        else:
-            with self.md.open("a", encoding="utf-8", newline="\n") as f:
-                f.write(f"### Round {round_idx} 要約\n\n{text}\n\n")
-                f.flush()
-        record = {
-            "ts": datetime.now().isoformat(timespec="seconds"),
-            "type": "summary",
-            "round": round_idx,
-            "summary": text,
-        }
-        phase_info = self._phase_record(phase_id, phase_turn, phase_kind, phase_base)
-        if phase_info:
-            record["phase"] = phase_info
-        with self.jsonl.open("a", encoding="utf-8", newline="\n") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            f.flush()
+        if self.md:
+            if self.ui_minimal:
+                tag = "要約"
+                with self.md.open("a", encoding="utf-8", newline="\n") as f:
+                    f.write(f"（{tag}）{text}\n\n")
+                    f.flush()
+            else:
+                with self.md.open("a", encoding="utf-8", newline="\n") as f:
+                    f.write(f"### Round {round_idx} 要約\n\n{text}\n\n")
+                    f.flush()
+        record = self._create_record(
+            "summary",
+            {
+                "round": round_idx,
+                "summary": text,
+            },
+            phase_id=phase_id,
+            phase_turn=phase_turn,
+            phase_kind=phase_kind,
+            phase_base=phase_base,
+        )
+        self._append_jsonl(record)
 
     def append_summary_probe(self, payload: Dict[str, Any]) -> None:
         """要約プローブの結果を JSONL 形式で追記する。"""
@@ -169,29 +178,25 @@ class LiveLogWriter:
         """最終合意内容を追記する。"""
 
         text = final_text.strip()
-        with self.md.open("a", encoding="utf-8", newline="\n") as f:
-            if self.ui_minimal:
-                f.write("【Final】\n" + text + "\n")
-            else:
-                f.write("## Final Decision / 合意案\n\n" + text + "\n")
-            f.flush()
-        record = {
-            "ts": datetime.now().isoformat(timespec="seconds"),
-            "type": "final",
-            "final": final_text,
-        }
-        with self.jsonl.open("a", encoding="utf-8", newline="\n") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
-            f.flush()
+        if self.md:
+            with self.md.open("a", encoding="utf-8", newline="\n") as f:
+                if self.ui_minimal:
+                    f.write("【Final】\n" + text + "\n")
+                else:
+                    f.write("## Final Decision / 合意案\n\n" + text + "\n")
+                f.flush()
+        record = self._create_record("final", {"final": final_text})
+        self._append_jsonl(record)
 
     def append_kpi(self, kpi: Dict):
         """KPI 情報を Markdown と JSON に保存する。"""
 
-        with self.md.open("a", encoding="utf-8", newline="\n") as f:
-            f.write("\n=== KPI ===\n")
-            for key, value in kpi.items():
-                f.write(f"- {key}: {value}\n")
-            f.flush()
+        if self.md:
+            with self.md.open("a", encoding="utf-8", newline="\n") as f:
+                f.write("\n=== KPI ===\n")
+                for key, value in kpi.items():
+                    f.write(f"- {key}: {value}\n")
+                f.flush()
         (self.dir / "kpi.json").write_text(
             json.dumps(kpi, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -200,16 +205,41 @@ class LiveLogWriter:
     def append_warning(self, message: str, *, context: Optional[Dict[str, Any]] = None) -> None:
         """警告情報を JSONL ログへ追記する。"""
 
-        record: Dict[str, Any] = {
-            "ts": datetime.now().isoformat(timespec="seconds"),
-            "type": "warning",
-            "message": message,
-        }
+        record = self._create_record("warning", {"message": message})
         if context:
             record["context"] = context
+        self._append_jsonl(record)
+
+    def _append_jsonl(self, record: Dict[str, Any]) -> None:
+        """JSONL ログへの追記を共通化する。"""
+
+        if not self.jsonl or not self.enable_jsonl:
+            return
         with self.jsonl.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             f.flush()
+
+    def _create_record(
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        *,
+        phase_id: Optional[int] = None,
+        phase_turn: Optional[int] = None,
+        phase_kind: Optional[str] = None,
+        phase_base: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """JSONL レコードを共通形式で生成する。"""
+
+        record: Dict[str, Any] = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "type": event_type,
+        }
+        record.update(payload)
+        phase_info = self._phase_record(phase_id, phase_turn, phase_kind, phase_base)
+        if phase_info:
+            record["phase"] = phase_info
+        return record
 
     @staticmethod
     def _phase_record(
