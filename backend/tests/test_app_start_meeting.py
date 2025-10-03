@@ -161,3 +161,23 @@ def test_start_meeting_cmd_accepts_advanced_options(monkeypatch, tmp_path):
         index = cmd_list.index(flag)
         assert cmd_list[index + 1] == expected
     assert "--no-chat-mode" in cmd_list
+
+
+def test_start_meeting_rejects_empty_agent_name(monkeypatch, tmp_path):
+    store: dict = {}
+    _setup_popen(monkeypatch, store)
+    monkeypatch.setattr(app_module, "_processes", {})
+
+    with TestClient(app_module.app) as client:
+        response = client.post(
+            "/meetings",
+            json={
+                "topic": "空の名前",  # noqa: RU002 - テストデータ
+                "agents": '"" Bob',
+                "outdir": str(tmp_path / "invalid"),
+            },
+        )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "agent names must not be empty"
+    assert "cmd_list" not in store

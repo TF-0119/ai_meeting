@@ -241,6 +241,20 @@ def _build_cli_command(
     if not agents:
         raise HTTPException(status_code=400, detail="agents must not be empty")
 
+    validated_agents: List[str] = []
+    for token in agents:
+        if token is None:
+            continue
+        value = token.strip()
+        if not value:
+            raise HTTPException(status_code=400, detail="agent names must not be empty")
+        name_part = value.split("=", 1)[0].strip()
+        if not name_part:
+            raise HTTPException(status_code=400, detail="agent names must not be empty")
+        validated_agents.append(value)
+
+    agents = validated_agents
+
     options = body.options or StartMeetingOptions()
     llm_from_options = options.llm
     llm_from_body = body.llm

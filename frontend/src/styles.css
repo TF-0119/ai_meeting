@@ -48,4 +48,24 @@ details.advanced summary:focus-visible{outline:2px solid var(--brand);outline-of
 .advanced-chat-title{font-size:14px;font-weight:600}
 .advanced-chat-toggle{display:flex;align-items:center;gap:8px;font-size:14px}
 .advanced-chat-toggle input{width:auto}
+.participant-section{display:flex;flex-direction:column;gap:8px}
+.participant-header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.participants-wrapper{border:1px solid var(--border);border-radius:10px;overflow-x:auto;background:#0d0e13}
+.participants-table{width:100%;border-collapse:collapse;min-width:100%}
+.participants-table th,.participants-table td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;vertical-align:top}
+.participants-table th{font-weight:600;font-size:13px;color:var(--muted)}
+.participants-table tr:last-child td{border-bottom:none}
+.participant-col-index{width:40px}
+.participant-col-actions{width:120px;text-align:center}
+.participant-index{text-align:center;color:var(--muted);font-size:13px}
+.participant-actions{text-align:center}
+.participant-remove{background:transparent;border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 12px;cursor:pointer}
+.participant-remove:hover{color:var(--text);border-color:var(--text)}
+.participant-remove:disabled{opacity:.5;cursor:not-allowed}
+.participant-prompt{min-height:52px;resize:vertical}
+.participants-empty{border:1px dashed var(--border);border-radius:10px;padding:16px;text-align:center;background:#0d0e13;color:var(--muted)}
+.participants-empty-text{margin-bottom:8px}
+.participant-empty-add{background:transparent;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 14px;cursor:pointer}
+.participant-empty-add:hover{border-color:var(--text)}
+.participant-preview{display:inline-block;margin-left:4px;padding:2px 6px;border-radius:6px;border:1px solid var(--border);background:#0d0e13;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;font-size:12px}
 @media (max-width:900px){.grid-2{grid-template-columns:1fr}}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useReducer, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getModels, startMeeting } from "../services/api";
+import { loadHomePreset, saveHomePreset } from "../services/presets";
 
 export default function Home() {
   const nav = useNavigate();
@@ -21,6 +22,13 @@ export default function Home() {
           };
         case "setModel":
           return { ...state, model: action.value };
+        case "hydrate":
+          return {
+            ...state,
+            ...action.value,
+            openaiKeyRequired:
+              ((action.value?.backend ?? state.backend) === "openai") && !action.openaiConfigured,
+          };
         default:
           return state;
       }
@@ -29,7 +37,7 @@ export default function Home() {
       topic: "",
       precision: "5",
       rounds: "4",
-      agents: "Alice Bob Carol",
+      agents: "",
       backend: "ollama",
       model: "",
       openaiKeyRequired: false,
@@ -42,6 +50,28 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const defaultParticipants = useMemo(
+    () => createParticipantsFromData(DEFAULT_PARTICIPANT_DATA),
+    [],
+  );
+  const [participants, setParticipants] = useState(defaultParticipants);
+  const [presetLoaded, setPresetLoaded] = useState(false);
+  const agentsPreview = useMemo(
+    () => buildAgentsString(participants, formState.agents),
+    [participants, formState.agents],
+  );
+
+  const handleParticipantChange = (id, field, value) => {
+    setParticipants((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+  };
+
+  const handleParticipantRemove = (id) => {
+    setParticipants((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleParticipantAdd = () => {
+    setParticipants((prev) => [...prev, createParticipantEntry()]);
+  };
 
   useEffect(() => {
     let ignore = false;
@@ -64,6 +94,67 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    const preset = loadHomePreset();
+    if (preset && typeof preset === "object") {
+      const { form, participants: storedParticipants } = preset;
+      if (form && typeof form === "object") {
+        const patch = {};
+        const fields = [
+          "topic",
+          "precision",
+          "rounds",
+          "agents",
+          "backend",
+          "model",
+          "phaseTurnLimit",
+          "maxPhases",
+          "chatMode",
+          "chatMaxSentences",
+        ];
+        fields.forEach((field) => {
+          const value = form[field];
+          if (typeof value === "undefined") return;
+          if (field === "chatMode") {
+            patch.chatMode = Boolean(value);
+            return;
+          }
+          if (typeof value === "string") {
+            patch[field] = value;
+            return;
+          }
+          if (typeof value === "number") {
+            patch[field] = String(value);
+          }
+        });
+        if (Object.keys(patch).length > 0) {
+          dispatch({ type: "hydrate", value: patch, openaiConfigured });
+        }
+      }
+      const baseAgents = typeof form?.agents === "string" ? form.agents : "";
+      const derivedParticipants = deriveParticipants(storedParticipants, baseAgents);
+      if (Array.isArray(storedParticipants)) {
+        setParticipants(derivedParticipants);
+      } else if (derivedParticipants.length) {
+        setParticipants(derivedParticipants);
+      }
+    }
+    setPresetLoaded(true);
+  }, [openaiConfigured]);
+
+  useEffect(() => {
+    if (!presetLoaded) return;
+    const { openaiKeyRequired: _ignored, ...formToSave } = formState;
+    const participantsToSave = participants.map((item) => ({
+      name: item.name ?? "",
+      prompt: item.prompt ?? "",
+    }));
+    saveHomePreset({
+      form: formToSave,
+      participants: participantsToSave,
+    });
+  }, [formState, participants, presetLoaded]);
+
   const onSubmit = async (e) => {
     e.preventDefault();
     if (loading) return;
@@ -78,7 +169,10 @@ export default function Home() {
       const roundsValueRaw = Number(formState.rounds);
       const precisionValue = Number.isFinite(precisionValueRaw) ? precisionValueRaw : undefined;
       const roundsValue = Number.isFinite(roundsValueRaw) ? roundsValueRaw : undefined;
-      const agentsTrimmed = formState.agents.trim();
+      const finalAgentsValue = buildAgentsString(participants, formState.agents);
+      if (!finalAgentsValue) {
+        throw new Error("参加者を1人以上設定してください。");
+      }
       const backendTrimmed = formState.backend.trim();
       const modelTrimmed = formState.model.trim();
       const maxPhasesTrimmed = formState.maxPhases.trim();
@@ -130,7 +224,7 @@ export default function Home() {
         topic: trimmedTopic,
         precision: precisionValue,
         rounds: roundsValue,
-        agents: agentsTrimmed || undefined,
+        agents: finalAgentsValue,
         backend: backendTrimmed || undefined,
       };
 
@@ -190,7 +284,7 @@ export default function Home() {
         topic: trimmedTopic,
         precision: String(precisionValue ?? 5),
         rounds: String(roundsValue ?? 4),
-        agents: agentsTrimmed,
+        agents: finalAgentsValue,
       }).toString();
       const encodedMeetingId = encodeURIComponent(meetingId);
       nav(`/meeting/${encodedMeetingId}?${params}`);
@@ -222,9 +316,40 @@ export default function Home() {
           </label>
         </div>
 
+        <div className="label participant-section">
+          <div className="participant-header">
+            <span>参加者リスト</span>
+            <button
+              type="button"
+              className="btn ghost participant-add"
+              onClick={handleParticipantAdd}
+            >
+              行を追加
+            </button>
+          </div>
+          <ParticipantsEditor
+            participants={participants}
+            onChange={handleParticipantChange}
+            onRemove={handleParticipantRemove}
+            onAdd={handleParticipantAdd}
+          />
+          <div className="hint">各参加者の名前と任意のシステムプロンプトを設定できます。</div>
+        </div>
+
         <label className="label">
-          参加者名（空白区切り、例: Alice Bob Carol)
-          <input className="input" value={formState.agents} onChange={(e) => dispatch({ type: "update", field: "agents", value: e.target.value })} placeholder="Alice Bob Carol" />
+          追加の参加者指定（文字列入力）
+          <input
+            className="input"
+            value={formState.agents}
+            onChange={(e) => dispatch({ type: "update", field: "agents", value: e.target.value })}
+            placeholder="例: Observer Analyst"
+          />
+          <div className="hint">
+            従来形式の空白区切り指定や <code>name=prompt</code> 形式をそのまま入力できます。
+          </div>
+          <div className="hint">
+            送信される値: {agentsPreview ? <code className="participant-preview">{agentsPreview}</code> : "（未設定）"}
+          </div>
         </label>
 
         <div className="grid-2">
@@ -351,3 +476,217 @@ const OPENAI_MODEL_CHOICES = [
   "o3-mini",
   "o1-mini",
 ];
+
+function ParticipantsEditor({ participants, onChange, onRemove, onAdd }) {
+  if (!participants.length) {
+    return (
+      <div className="participants-empty">
+        <div className="participants-empty-text">参加者が設定されていません。</div>
+        {onAdd && (
+          <button type="button" className="participant-empty-add" onClick={onAdd}>
+            行を追加
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="participants-wrapper">
+      <table className="participants-table">
+        <thead>
+          <tr>
+            <th className="participant-col-index">#</th>
+            <th className="participant-col-name">名前</th>
+            <th className="participant-col-prompt">システムプロンプト（任意）</th>
+            <th className="participant-col-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {participants.map((participant, index) => (
+            <tr key={participant.id}>
+              <td className="participant-index">{index + 1}</td>
+              <td>
+                <input
+                  className="input"
+                  value={participant.name}
+                  onChange={(e) => onChange(participant.id, "name", e.target.value)}
+                  placeholder={DEFAULT_PARTICIPANT_DATA[index]?.name ?? "Agent"}
+                />
+              </td>
+              <td>
+                <textarea
+                  className="input participant-prompt"
+                  rows={2}
+                  value={participant.prompt}
+                  onChange={(e) => onChange(participant.id, "prompt", e.target.value)}
+                  placeholder="例: 調整役として議論をまとめる"
+                />
+              </td>
+              <td className="participant-actions">
+                <button
+                  type="button"
+                  className="participant-remove"
+                  onClick={() => onRemove(participant.id)}
+                  aria-label={`参加者${index + 1}を削除`}
+                >
+                  削除
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+const DEFAULT_PARTICIPANT_DATA = [
+  { name: "Alice", prompt: "" },
+  { name: "Bob", prompt: "" },
+  { name: "Carol", prompt: "" },
+];
+
+const WHITESPACE_RE = /\s/;
+
+function createParticipantId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `p-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+}
+
+function createParticipantEntry(name = "", prompt = "") {
+  return {
+    id: createParticipantId(),
+    name: typeof name === "string" ? name : "",
+    prompt: typeof prompt === "string" ? prompt : "",
+  };
+}
+
+function createParticipantsFromData(list) {
+  if (!Array.isArray(list)) return [];
+  return list.map((item) => createParticipantEntry(item?.name ?? "", item?.prompt ?? ""));
+}
+
+function deriveParticipants(savedList, fallbackAgents) {
+  if (Array.isArray(savedList)) {
+    return createParticipantsFromData(savedList);
+  }
+  const parsed = parseAgentsString(fallbackAgents);
+  if (parsed.length) {
+    return createParticipantsFromData(parsed);
+  }
+  return [];
+}
+
+function parseAgentsString(text) {
+  if (typeof text !== "string" || !text.trim()) return [];
+  const tokens = splitAgentsString(text);
+  return tokens
+    .map((token) => {
+      const [namePart, promptPart] = token.split("=", 2);
+      const name = (namePart ?? "").trim();
+      if (!name) return null;
+      const prompt = promptPart !== undefined ? promptPart.trim() : "";
+      return { name, prompt };
+    })
+    .filter(Boolean);
+}
+
+function splitAgentsString(input) {
+  if (typeof input !== "string" || !input) return [];
+  const tokens = [];
+  let current = "";
+  let quote = "";
+  let justClosedQuote = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+
+    if (quote) {
+      if (char === "\\") {
+        if (i + 1 < input.length) {
+          current += input[i + 1];
+          i += 1;
+        }
+        justClosedQuote = false;
+        continue;
+      }
+      if (char === quote) {
+        quote = "";
+        justClosedQuote = true;
+        continue;
+      }
+      current += char;
+      justClosedQuote = false;
+      continue;
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char;
+      continue;
+    }
+
+    if (WHITESPACE_RE.test(char)) {
+      if (current || justClosedQuote) {
+        tokens.push(current);
+        current = "";
+        justClosedQuote = false;
+      }
+      continue;
+    }
+
+    if (char === "\\" && i + 1 < input.length) {
+      current += input[i + 1];
+      i += 1;
+      justClosedQuote = false;
+      continue;
+    }
+
+    current += char;
+    justClosedQuote = false;
+  }
+
+  if (current || justClosedQuote) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
+function buildAgentsString(participants, extraText) {
+  const tokens = [];
+  if (Array.isArray(participants)) {
+    participants.forEach((participant) => {
+      const token = createAgentToken(participant);
+      if (token) {
+        tokens.push(token);
+      }
+    });
+  }
+  if (typeof extraText === "string" && extraText.trim()) {
+    tokens.push(extraText.trim());
+  }
+  return tokens.join(" ").trim();
+}
+
+function createAgentToken(participant) {
+  if (!participant) return null;
+  const rawName = typeof participant.name === "string" ? participant.name : "";
+  const rawPrompt = typeof participant.prompt === "string" ? participant.prompt : "";
+  const normalizedName = rawName.replace(/\s+/g, " ").trim();
+  if (!normalizedName) return null;
+  const normalizedPrompt = rawPrompt.replace(/\r?\n/g, " ").trim();
+  const base = normalizedPrompt ? `${normalizedName}=${normalizedPrompt}` : normalizedName;
+  return needsQuoting(base) ? quoteToken(base) : base;
+}
+
+function needsQuoting(value) {
+  return /[\s"]/u.test(value);
+}
+
+function quoteToken(value) {
+  const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  return `"${escaped}"`;
+}
