@@ -37,4 +37,15 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,s
 .kpi{background:#0d0e13;border:1px solid var(--border);border-radius:12px;padding:12px}
 .kpi-label{color:var(--muted);font-size:12px;margin-bottom:4px}
 .kpi-value{font-size:20px;font-weight:700}
+details.advanced{margin-top:16px;border-top:1px solid var(--border);padding-top:16px}
+details.advanced summary{cursor:pointer;font-weight:600;color:var(--muted);outline:none}
+.advanced-summary{list-style:none;font-size:16px}
+details.advanced[open] summary{color:var(--text)}
+details.advanced summary:focus-visible{outline:2px solid var(--brand);outline-offset:4px}
+.advanced-content{margin-top:12px}
+.advanced-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.advanced-chat-section{display:flex;flex-direction:column;gap:8px}
+.advanced-chat-title{font-size:14px;font-weight:600}
+.advanced-chat-toggle{display:flex;align-items:center;gap:8px;font-size:14px}
+.advanced-chat-toggle input{width:auto}
 @media (max-width:900px){.grid-2{grid-template-columns:1fr}}

@@ -2,11 +2,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import BackgroundTasks, HTTPException
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from backend.settings import settings
 from backend.defaults import DEFAULT_AGENT_STRING, DEFAULT_AGENT_NAMES
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Union, Any
 from urllib.parse import urlparse
 import psutil
 import httpx, sys, os
@@ -52,13 +52,300 @@ def _slugify(s: str, max_len: int = 60) -> str:
     s = re.sub(r"\s+", "_", s)
     return s[:max_len] or "topic"
 
+def _first_non_none(*values: Any) -> Any:
+    """None 以外かつ実質的な値を先頭から返すユーティリティ。"""
+
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                continue
+            return stripped
+        return value
+    return None
+
+
+def _ensure_int(value: Any, field_name: str, *, minimum: int = 0, maximum: Optional[int] = None) -> int:
+    """値が整数かつ指定レンジに収まるか検証し、問題なければ int を返す。"""
+
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:  # noqa: PERF203 - 詳細なエラーを優先
+        raise HTTPException(status_code=400, detail=f"{field_name} は整数で指定してください。") from exc
+
+    if number < minimum:
+        raise HTTPException(status_code=400, detail=f"{field_name} は {minimum} 以上で指定してください。")
+    if maximum is not None and number > maximum:
+        raise HTTPException(status_code=400, detail=f"{field_name} は {maximum} 以下で指定してください。")
+    return number
+
+
+def _ensure_int_string(value: Any, field_name: str, *, minimum: int = 0, maximum: Optional[int] = None) -> str:
+    """_ensure_int のラッパー。CLI 渡し用に文字列へ変換する。"""
+
+    return str(_ensure_int(value, field_name, minimum=minimum, maximum=maximum))
+
+
 class StartMeetingLLMOptions(BaseModel):
-    llm_backend: Optional[str] = None
-    ollama_model: Optional[str] = None
-    openai_model: Optional[str] = None
+    """LLMに関するオプションのサブモデル。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    llm_backend: Optional[str] = Field(default=None, alias="llmBackend")
+    backend: Optional[str] = None
+    ollama_model: Optional[str] = Field(default=None, alias="ollamaModel")
+    openai_model: Optional[str] = Field(default=None, alias="openaiModel")
+    model: Optional[str] = None
+
+
+PhaseTurnLimitType = Optional[
+    Union[
+        int,
+        str,
+        List[Union[int, str]],
+        Dict[str, Union[int, str]],
+    ]
+]
+
+
+class StartMeetingFlowOptions(BaseModel):
+    """フェーズ制御に関するオプション。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    phase_turn_limit: PhaseTurnLimitType = Field(default=None, alias="phaseTurnLimit")
+    phase_goal: Optional[Union[str, List[str], Dict[str, str]]] = Field(
+        default=None, alias="phaseGoal"
+    )
+    max_phases: Optional[int] = Field(default=None, alias="maxPhases")
+
+
+class StartMeetingChatOptions(BaseModel):
+    """チャット（短文応答）関連のオプション。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    chat_mode: Optional[bool] = Field(default=None, alias="chatMode")
+    chat_max_sentences: Optional[int] = Field(default=None, alias="chatMaxSentences")
+    chat_max_chars: Optional[int] = Field(default=None, alias="chatMaxChars")
+    chat_window: Optional[int] = Field(default=None, alias="chatWindow")
+
+
+class StartMeetingMemoryOptions(BaseModel):
+    """エージェントメモリ関連のオプション。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    agent_memory_limit: Optional[int] = Field(default=None, alias="agentMemoryLimit")
+    agent_memory_window: Optional[int] = Field(default=None, alias="agentMemoryWindow")
+
+
+class StartMeetingOptions(BaseModel):
+    """階層化された各種オプション。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
+    llm: Optional[StartMeetingLLMOptions] = None
+    flow: Optional[StartMeetingFlowOptions] = None
+    chat: Optional[StartMeetingChatOptions] = None
+    memory: Optional[StartMeetingMemoryOptions] = None
+    llm_backend: Optional[str] = Field(default=None, alias="llmBackend")
+    backend: Optional[str] = None
+    model: Optional[str] = None
+
+
+def _phase_turn_limit_tokens(value: PhaseTurnLimitType) -> List[str]:
+    """phase_turn_limit を CLI トークン列へ変換する。"""
+
+    if value is None:
+        return []
+
+    tokens: List[str] = []
+
+    if isinstance(value, dict):
+        for key, raw in value.items():
+            if raw is None:
+                continue
+            name = str(key).strip()
+            if not name:
+                raise HTTPException(status_code=400, detail="phaseTurnLimit のキーが空です。")
+            tokens.append(f"{name}={_ensure_int_string(raw, 'phaseTurnLimit', minimum=0)}")
+        return tokens
+
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            tokens.extend(_phase_turn_limit_tokens(item))
+        return tokens
+
+    if isinstance(value, int):
+        tokens.append(_ensure_int_string(value, "phaseTurnLimit", minimum=0))
+        return tokens
+
+    if isinstance(value, str):
+        token = value.strip()
+        if not token:
+            return []
+        if "=" in token:
+            key, raw = token.split("=", 1)
+            key = key.strip()
+            if not key:
+                raise HTTPException(status_code=400, detail="phaseTurnLimit のキーが空です。")
+            tokens.append(f"{key}={_ensure_int_string(raw, 'phaseTurnLimit', minimum=0)}")
+        else:
+            tokens.append(_ensure_int_string(token, "phaseTurnLimit", minimum=0))
+        return tokens
+
+    raise HTTPException(status_code=400, detail="phaseTurnLimit の形式が不正です。")
+
+
+def _phase_goal_tokens(value: Optional[Union[str, List[str], Dict[str, str]]]) -> List[str]:
+    """phase_goal を CLI トークン列へ変換する。"""
+
+    if value is None:
+        return []
+
+    tokens: List[str] = []
+
+    if isinstance(value, dict):
+        for key, raw in value.items():
+            if raw is None:
+                continue
+            key_str = str(key).strip()
+            text = str(raw).strip()
+            if not key_str or not text:
+                continue
+            tokens.append(f"{key_str}={text}")
+        return tokens
+
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            tokens.extend(_phase_goal_tokens(item))
+        return tokens
+
+    text = str(value).strip()
+    if text:
+        tokens.append(text)
+    return tokens
+
+
+def _build_cli_command(
+    body: "StartMeetingIn",
+    outdir: Path,
+    normalized_ollama_url: str,
+) -> tuple[List[str], str]:
+    """StartMeetingIn から CLI コマンドリストとバックエンド種別を生成する。"""
+
+    agents = shlex.split(body.agents)
+    if not agents:
+        raise HTTPException(status_code=400, detail="agents must not be empty")
+
+    options = body.options or StartMeetingOptions()
+    llm_from_options = options.llm
+    llm_from_body = body.llm
+
+    selected_backend = _first_non_none(
+        llm_from_options.llm_backend if llm_from_options else None,
+        llm_from_options.backend if llm_from_options else None,
+        options.llm_backend,
+        options.backend,
+        llm_from_body.llm_backend,
+        getattr(llm_from_body, "backend", None),
+        body.backend,
+    ) or "ollama"
+
+    ollama_model = _first_non_none(
+        llm_from_options.ollama_model if llm_from_options else None,
+        llm_from_options.model if llm_from_options and selected_backend == "ollama" else None,
+        options.model if selected_backend == "ollama" else None,
+        llm_from_body.ollama_model,
+        llm_from_body.model if selected_backend == "ollama" else None,
+    )
+    openai_model = _first_non_none(
+        llm_from_options.openai_model if llm_from_options else None,
+        llm_from_options.model if llm_from_options and selected_backend == "openai" else None,
+        options.model if selected_backend == "openai" else None,
+        llm_from_body.openai_model,
+        llm_from_body.model if selected_backend == "openai" else None,
+    )
+
+    py = sys.executable
+    cmd_list: List[str] = [
+        py,
+        "-u",
+        "-m",
+        "backend.ai_meeting",
+        "--topic",
+        body.topic,
+        "--precision",
+        str(body.precision),
+        "--rounds",
+        str(body.rounds),
+        "--agents",
+        *agents,
+    ]
+
+    if selected_backend:
+        cmd_list.extend(["--backend", selected_backend])
+    if ollama_model:
+        cmd_list.extend(["--ollama-model", ollama_model])
+    if openai_model:
+        cmd_list.extend(["--openai-model", openai_model])
+
+    cmd_list.extend(["--outdir", str(outdir)])
+    if selected_backend == "ollama":
+        cmd_list.extend(["--ollama-url", normalized_ollama_url])
+
+    flow_options = options.flow
+    if flow_options:
+        for token in _phase_turn_limit_tokens(flow_options.phase_turn_limit):
+            cmd_list.extend(["--phase-turn-limit", token])
+        for token in _phase_goal_tokens(flow_options.phase_goal):
+            cmd_list.extend(["--phase-goal", token])
+        if flow_options.max_phases is not None:
+            max_phases = _ensure_int(flow_options.max_phases, "maxPhases", minimum=1)
+            cmd_list.extend(["--max-phases", str(max_phases)])
+
+    chat_options = options.chat
+    if chat_options:
+        if chat_options.chat_mode is False:
+            cmd_list.append("--no-chat-mode")
+        if chat_options.chat_mode is True:
+            # 明示的に True が指定されても既定値と同じなのでフラグ不要
+            pass
+        if chat_options.chat_max_sentences is not None:
+            max_sentences = _ensure_int(
+                chat_options.chat_max_sentences,
+                "chatMaxSentences",
+                minimum=1,
+                maximum=10,
+            )
+            cmd_list.extend(["--chat-max-sentences", str(max_sentences)])
+        if chat_options.chat_max_chars is not None:
+            max_chars = _ensure_int(chat_options.chat_max_chars, "chatMaxChars", minimum=1)
+            cmd_list.extend(["--chat-max-chars", str(max_chars)])
+        if chat_options.chat_window is not None:
+            window = _ensure_int(chat_options.chat_window, "chatWindow", minimum=1)
+            cmd_list.extend(["--chat-window", str(window)])
+
+    memory_options = options.memory
+    if memory_options:
+        if memory_options.agent_memory_limit is not None:
+            limit = _ensure_int(memory_options.agent_memory_limit, "agentMemoryLimit", minimum=0)
+            cmd_list.extend(["--agent-memory-limit", str(limit)])
+        if memory_options.agent_memory_window is not None:
+            window = _ensure_int(memory_options.agent_memory_window, "agentMemoryWindow", minimum=0)
+            cmd_list.extend(["--agent-memory-window", str(window)])
+
+    return cmd_list, selected_backend
 
 
 class StartMeetingIn(BaseModel):
+    """会議起動リクエスト本体。"""
+
+    model_config = ConfigDict(populate_by_name=True, extra="ignore")
+
     topic: str = Field(..., min_length=1)
     precision: int = Field(5, ge=1, le=10)
     rounds: int = Field(4, ge=1, le=100)
@@ -66,6 +353,7 @@ class StartMeetingIn(BaseModel):
     backend: str = Field("ollama")  # "ollama" or "openai" など
     outdir: Optional[str] = None    # 明示指定したい場合。未指定なら自動で logs/<ts>_<slug> を作る
     llm: StartMeetingLLMOptions = Field(default_factory=StartMeetingLLMOptions)
+    options: Optional[StartMeetingOptions] = None
 
 class StartMeetingOut(BaseModel):
     ok: bool
@@ -102,28 +390,7 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
     stdout_f = open(outdir / "backend_stdout.log", "a", encoding="utf-8")
     stderr_f = open(outdir / "backend_stderr.log", "a", encoding="utf-8")
 
-    # “python” ではなく現在のPythonを使う（環境ズレ防止）
-    py = sys.executable
-    agents = shlex.split(body.agents)
-    if not agents:
-        raise HTTPException(status_code=400, detail="agents must not be empty")
-    selected_backend = body.llm.llm_backend or body.backend
-    cmd_list = [
-        py, "-u", "-m", "backend.ai_meeting",
-        "--topic", body.topic,
-        "--precision", str(body.precision),
-        "--rounds", str(body.rounds),
-        "--agents", *agents,
-    ]
-    if selected_backend:
-        cmd_list.extend(["--backend", selected_backend])
-    if body.llm.ollama_model:
-        cmd_list.extend(["--ollama-model", body.llm.ollama_model])
-    if body.llm.openai_model:
-        cmd_list.extend(["--openai-model", body.llm.openai_model])
-    cmd_list.extend(["--outdir", str(outdir)])
-    if selected_backend == "ollama":
-        cmd_list.extend(["--ollama-url", normalized_ollama_url])
+    cmd_list, selected_backend = _build_cli_command(body, outdir, normalized_ollama_url)
     cmd_str = " ".join(shlex.quote(c) for c in cmd_list)
 
     # 起動

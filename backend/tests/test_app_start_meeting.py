@@ -105,3 +105,59 @@ def test_start_meeting_cmd_accepts_llm_overrides(monkeypatch, tmp_path):
     assert "--ollama-model" in store["cmd_list"]
     assert "--openai-model" in store["cmd_list"]
     assert "--ollama-url" not in store["cmd_list"]
+
+
+def test_start_meeting_cmd_accepts_advanced_options(monkeypatch, tmp_path):
+    store: dict = {}
+    _setup_popen(monkeypatch, store)
+    monkeypatch.setattr(app_module, "_processes", {})
+
+    with TestClient(app_module.app) as client:
+        response = client.post(
+            "/meetings",
+            json={
+                "topic": "高度設定",
+                "agents": "Alice Bob",
+                "outdir": str(tmp_path / "advanced"),
+                "options": {
+                    "flow": {
+                        "phaseTurnLimit": ["discussion=2", "resolution=1"],
+                        "maxPhases": 3,
+                    },
+                    "chat": {
+                        "chatMode": False,
+                        "chatMaxSentences": 4,
+                    },
+                    "memory": {
+                        "agentMemoryLimit": 9,
+                        "agentMemoryWindow": 2,
+                    },
+                },
+            },
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    cmd = data["cmd"]
+
+    assert "--phase-turn-limit discussion=2" in cmd
+    assert "--phase-turn-limit resolution=1" in cmd
+    assert "--max-phases 3" in cmd
+    assert "--no-chat-mode" in cmd
+    assert "--chat-max-sentences 4" in cmd
+    assert "--agent-memory-limit 9" in cmd
+    assert "--agent-memory-window 2" in cmd
+
+    cmd_list = store.get("cmd_list", [])
+    phase_values = [cmd_list[i + 1] for i, token in enumerate(cmd_list) if token == "--phase-turn-limit"]
+    assert phase_values == ["discussion=2", "resolution=1"]
+    expectations = {
+        "--max-phases": "3",
+        "--chat-max-sentences": "4",
+        "--agent-memory-limit": "9",
+        "--agent-memory-window": "2",
+    }
+    for flag, expected in expectations.items():
+        index = cmd_list.index(flag)
+        assert cmd_list[index + 1] == expected
+    assert "--no-chat-mode" in cmd_list
