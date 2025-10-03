@@ -52,6 +52,12 @@ def _slugify(s: str, max_len: int = 60) -> str:
     s = re.sub(r"\s+", "_", s)
     return s[:max_len] or "topic"
 
+class StartMeetingLLMOptions(BaseModel):
+    llm_backend: Optional[str] = None
+    ollama_model: Optional[str] = None
+    openai_model: Optional[str] = None
+
+
 class StartMeetingIn(BaseModel):
     topic: str = Field(..., min_length=1)
     precision: int = Field(5, ge=1, le=10)
@@ -59,6 +65,7 @@ class StartMeetingIn(BaseModel):
     agents: str = Field(DEFAULT_AGENT_STRING)
     backend: str = Field("ollama")  # "ollama" or "openai" など
     outdir: Optional[str] = None    # 明示指定したい場合。未指定なら自動で logs/<ts>_<slug> を作る
+    llm: StartMeetingLLMOptions = Field(default_factory=StartMeetingLLMOptions)
 
 class StartMeetingOut(BaseModel):
     ok: bool
@@ -100,22 +107,28 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
     agents = shlex.split(body.agents)
     if not agents:
         raise HTTPException(status_code=400, detail="agents must not be empty")
+    selected_backend = body.llm.llm_backend or body.backend
     cmd_list = [
         py, "-u", "-m", "backend.ai_meeting",
         "--topic", body.topic,
         "--precision", str(body.precision),
         "--rounds", str(body.rounds),
         "--agents", *agents,
-        "--backend", body.backend,
-        "--outdir", str(outdir),
     ]
-    if body.backend == "ollama":
+    if selected_backend:
+        cmd_list.extend(["--backend", selected_backend])
+    if body.llm.ollama_model:
+        cmd_list.extend(["--ollama-model", body.llm.ollama_model])
+    if body.llm.openai_model:
+        cmd_list.extend(["--openai-model", body.llm.openai_model])
+    cmd_list.extend(["--outdir", str(outdir)])
+    if selected_backend == "ollama":
         cmd_list.extend(["--ollama-url", normalized_ollama_url])
     cmd_str = " ".join(shlex.quote(c) for c in cmd_list)
 
     # 起動
     child_env = {**os.environ, "PYTHONUNBUFFERED": "1"}
-    if body.backend == "ollama":
+    if selected_backend == "ollama":
         child_env["OLLAMA_URL"] = normalized_ollama_url
     proc = subprocess.Popen(
         cmd_list,
@@ -134,7 +147,7 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
             "outdir": str(outdir),
             "started_at": ts,
             "topic": body.topic,
-            "backend": body.backend,
+            "backend": selected_backend,
         }
 
     return StartMeetingOut(
