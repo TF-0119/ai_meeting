@@ -196,7 +196,11 @@ class Meeting:
         rp = self.cfg.runtime_params()
         self.temperature = rp["temperature"]
         self.critique_passes = rp["critique_passes"]
-        self._summary_probe = SummaryProbe(self.backend, self.cfg)
+        self._summary_probe: Optional[SummaryProbe]
+        if getattr(self.cfg, "summary_probe_enabled", False):
+            self._summary_probe = SummaryProbe(self.backend, self.cfg)
+        else:
+            self._summary_probe = None
         self._pending = PendingTracker()  # 残課題トラッカー
         self.logger = LiveLogWriter(
             self.cfg.topic,
@@ -990,8 +994,24 @@ class Meeting:
             max_tokens=(180 if self.cfg.chat_mode else self.cfg.max_tokens),
         )
 
+    def _fallback_round_summary(self, new_turn: Turn) -> str:
+        """要約プローブ無効時に返す簡易要約を生成する。"""
+
+        speaker = getattr(new_turn, "speaker", "") or ""
+        content = getattr(new_turn, "content", "") or ""
+        normalized = re.sub(r"\s+", " ", content.strip())
+        if normalized:
+            snippet = textwrap.shorten(normalized, width=120, placeholder="…")
+            return f"{speaker}の発言要約: {snippet}" if speaker else snippet
+        if speaker:
+            return f"{speaker}の発言内容は記録されませんでした。"
+        return "直近の発言内容は利用できません。"
+
     def _summarize_round(self, new_turn: Turn) -> Dict[str, Any]:
         """SummaryProbe のペイロードを生成し返す。"""
+
+        if not getattr(self.cfg, "summary_probe_enabled", False) or self._summary_probe is None:
+            return {"summary": self._fallback_round_summary(new_turn)}
 
         try:
             result = self._summary_probe.generate_summary(new_turn, self.history)
@@ -1004,7 +1024,7 @@ class Meeting:
                     "speaker": getattr(new_turn, "speaker", ""),
                 },
             )
-            return {"summary": ""}
+            return {"summary": self._fallback_round_summary(new_turn)}
         return result
 
     def _log_summary_probe(
@@ -1020,6 +1040,8 @@ class Meeting:
     ) -> None:
         """要約プローブ結果をログへ安全に書き出す。"""
 
+        if not getattr(self.cfg, "summary_probe_enabled", False) or self._summary_probe is None:
+            return
         if not self.cfg.summary_probe_log_enabled:
             return
         try:

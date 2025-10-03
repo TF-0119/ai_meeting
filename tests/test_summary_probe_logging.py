@@ -61,3 +61,48 @@ def test_summary_probe_logging_appends_json(tmp_path, monkeypatch) -> None:
         assert [rec["summary"] for rec in summary_records] == [entry["summary"] for entry in summary_entries]
     finally:
         shutil.rmtree(meeting.logger.dir, ignore_errors=True)
+
+
+def test_summary_probe_disabled_skips_generation(tmp_path, monkeypatch) -> None:
+    """summary_probe 無効化時に要約プローブ呼び出しとログ生成を抑制する。"""
+
+    monkeypatch.setenv("AI_MEETING_TEST_MODE", "1")
+    call_counter = {"init": 0, "generate": 0}
+
+    class DummyProbe:
+        def __init__(self, backend, cfg):  # noqa: D401 - テスト用ダミー
+            call_counter["init"] += 1
+
+        def generate_summary(self, new_turn, history):  # noqa: D401 - テスト用ダミー
+            call_counter["generate"] += 1
+            return {"summary": "dummy"}
+
+    monkeypatch.setattr("backend.ai_meeting.meeting.SummaryProbe", DummyProbe)
+
+    cfg = MeetingConfig(
+        topic="要約プローブの無効化検証",
+        agents=[
+            AgentConfig(name="Alice", system="要点を簡潔に整理する"),
+            AgentConfig(name="Bob", system="視点を補う"),
+        ],
+        phase_turn_limit=2,
+        resolve_round=False,
+        think_debug=False,
+        summary_probe_enabled=False,
+        summary_probe_log_enabled=True,
+        outdir=str(tmp_path / "logs"),
+    )
+
+    meeting = Meeting(cfg)
+
+    try:
+        meeting.run()
+        assert call_counter["init"] == 0
+        assert call_counter["generate"] == 0
+
+        log_file = meeting.logger.summary_probe_log
+        assert log_file.exists()
+        assert log_file.stat().st_size == 0
+        assert list(meeting.logger.iter_summary_probe()) == []
+    finally:
+        shutil.rmtree(meeting.logger.dir, ignore_errors=True)
