@@ -67,6 +67,54 @@ PERSONALITY_TEMPLATES: Dict[str, PersonalityTemplate] = {
 }
 
 
+def _resolve_personality_seed(cfg: MeetingConfig, test_mode: bool) -> Optional[int]:
+    """個性テンプレート抽選用の乱数シードを決定する。"""
+
+    if isinstance(getattr(cfg, "personality_seed", None), int):
+        return cfg.personality_seed  # type: ignore[attr-defined]
+
+    env_value = os.getenv("AI_MEETING_TEST_MODE", "").strip()
+    if not env_value:
+        return None
+
+    normalized = env_value.lower()
+    if normalized in {"1", "true", "deterministic"}:
+        return 0
+
+    match = re.search(r"(-?\d+)", normalized)
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
+    return 0 if test_mode else None
+
+
+def _select_personality_templates(
+    agent_count: int, rng: random.Random
+) -> List[PersonalityTemplate]:
+    """必要な人数分の個性テンプレートを乱択で取得する。"""
+
+    if agent_count <= 0 or not PERSONALITY_LIBRARY:
+        return []
+
+    pool = list(PERSONALITY_LIBRARY)
+    rng.shuffle(pool)
+    selected: List[PersonalityTemplate] = []
+
+    while len(selected) < agent_count:
+        remaining = agent_count - len(selected)
+        if remaining >= len(pool):
+            selected.extend(pool)
+            pool = list(PERSONALITY_LIBRARY)
+            rng.shuffle(pool)
+        else:
+            selected.extend(pool[:remaining])
+
+    return selected
+
+
 class Meeting:
     """会議の進行を管理するメインクラス。"""
 
@@ -401,15 +449,15 @@ class Meeting:
             return
 
         rng = random.Random()
-        if not self._test_mode:
+        seed = _resolve_personality_seed(self.cfg, self._test_mode)
+        if seed is not None:
+            rng.seed(seed)
+        else:
             rng.seed()
 
-        for idx, agent in enumerate(self.cfg.agents):
-            template = (
-                PERSONALITY_LIBRARY[idx % len(PERSONALITY_LIBRARY)]
-                if self._test_mode
-                else rng.choice(PERSONALITY_LIBRARY)
-            )
+        templates = _select_personality_templates(len(self.cfg.agents), rng)
+
+        for agent, template in zip(self.cfg.agents, templates):
             self._personality_profiles[agent.name] = template
             profile_text = template.to_memory_entry()
             self._agent_personality_memory[agent.name] = profile_text
