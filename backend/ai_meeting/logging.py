@@ -6,7 +6,7 @@ import re
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterator, Optional
 
 
 class LiveLogWriter:
@@ -151,6 +151,19 @@ class LiveLogWriter:
         with self.summary_probe_log.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
             f.flush()
+
+    def iter_summary_probe(self) -> Iterator[Dict[str, Any]]:
+        """要約プローブログから JSON レコードを順に取得する。"""
+
+        with self.summary_probe_log.open("r", encoding="utf-8") as f:
+            for line in f:
+                entry = line.strip()
+                if not entry:
+                    continue
+                try:
+                    yield json.loads(entry)
+                except json.JSONDecodeError as exc:  # pragma: no cover - 想定外のログ破損
+                    raise ValueError("summary_probe ログの形式が不正です。") from exc
 
     def append_final(self, final_text: str):
         """最終合意内容を追記する。"""

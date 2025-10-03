@@ -44,13 +44,7 @@ def test_summary_probe_logging_appends_json(tmp_path, monkeypatch) -> None:
     try:
         meeting.run()
         log_dir = meeting.logger.dir
-        summary_path = log_dir / cfg.summary_probe_filename
-
-        summary_entries = [
-            json.loads(line)
-            for line in summary_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
+        summary_entries = list(meeting.logger.iter_summary_probe())
         assert summary_entries, "summary_probe ログに JSON エントリが存在すること"
 
         live_records = [
