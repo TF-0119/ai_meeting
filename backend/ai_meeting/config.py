@@ -85,6 +85,10 @@ class MeetingConfig(BaseModel):
     # ---- Step8前: 思考→審査→発言（T3→T1）MVP ----
     think_mode: bool = True  # 全員が非公開の「思考」を出してから発言者を決める
     think_debug: bool = True  # thoughts.jsonl に全思考・採点を保存（本文には出さない）
+    think_judge_include_topic: bool = True  # 審査プロンプトにトピックを含めるか
+    think_judge_include_recent: bool = True  # 審査プロンプトに直近発言の抜粋を含めるか
+    think_judge_include_recent_summary: bool = True  # 審査プロンプトに直近要約を含めるか
+    think_judge_include_flow_summary: bool = True  # 審査プロンプトに流れ要約を含めるか
     summary_probe_enabled: bool = False  # 要約プローブ（暫定）を有効化するかどうか
     summary_probe_log_enabled: bool = False  # 要約プローブ結果をログ保存するかどうか
     summary_probe_filename: str = "summary_probe.json"  # 要約プローブの出力ファイル名
