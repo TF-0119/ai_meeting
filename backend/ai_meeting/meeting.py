@@ -1002,7 +1002,7 @@ class Meeting:
         normalized = re.sub(r"\s+", " ", content.strip())
         if normalized:
             snippet = textwrap.shorten(normalized, width=120, placeholder="…")
-            return f"{speaker}の発言要約: {snippet}" if speaker else snippet
+            return f"{speaker}: {snippet}" if speaker else snippet
         if speaker:
             return f"{speaker}の発言内容は記録されませんでした。"
         return "直近の発言内容は利用できません。"
