@@ -325,7 +325,25 @@ class Meeting:
         base_entries: List[str] = []
         summary_text = ""
         if isinstance(summary_payload, dict):
-            summary_text = summary_payload.get("summary", "") or ""
+            raw_summary = summary_payload.get("summary")
+            if raw_summary is None or isinstance(raw_summary, str):
+                summary_text = raw_summary or ""
+            else:
+                self.logger.append_warning(
+                    "agent_memory_invalid_summary_text",
+                    context={
+                        "speaker": getattr(turn, "speaker", ""),
+                        "received_type": type(raw_summary).__name__,
+                    },
+                )
+        elif summary_payload is not None:
+            self.logger.append_warning(
+                "agent_memory_invalid_summary_payload",
+                context={
+                    "speaker": getattr(turn, "speaker", ""),
+                    "received_type": type(summary_payload).__name__,
+                },
+            )
         if summary_text:
             seen_base: set[str] = set()
             for line in summary_text.splitlines():
@@ -334,7 +352,17 @@ class Meeting:
                     continue
                 base_entries.append(clean)
                 seen_base.add(clean)
-        fallback = turn.content.strip()
+        fallback = ""
+        if isinstance(turn.content, str):
+            fallback = turn.content.strip()
+        elif turn.content is not None:
+            self.logger.append_warning(
+                "agent_memory_invalid_turn_content",
+                context={
+                    "speaker": getattr(turn, "speaker", ""),
+                    "received_type": type(turn.content).__name__,
+                },
+            )
         if not base_entries and fallback:
             base_entries.append(fallback)
 
@@ -623,11 +651,29 @@ class Meeting:
 
         candidate_lines: List[str] = []
         if round_summary:
-            candidate_lines.extend(round_summary.splitlines())
+            if isinstance(round_summary, str):
+                candidate_lines.extend(round_summary.splitlines())
+            else:
+                self.logger.append_warning(
+                    "conversation_summary_invalid_round_summary",
+                    context={"received_type": type(round_summary).__name__},
+                )
         if not candidate_lines and new_turn is not None:
-            content = new_turn.content.strip()
+            content_value = getattr(new_turn, "content", "")
+            if isinstance(content_value, str):
+                content = content_value.strip()
+            else:
+                content = ""
+                self.logger.append_warning(
+                    "conversation_summary_invalid_turn_content",
+                    context={
+                        "speaker": getattr(new_turn, "speaker", ""),
+                        "received_type": type(content_value).__name__,
+                    },
+                )
             if content:
-                candidate_lines.append(f"{new_turn.speaker}: {content}")
+                speaker_name = new_turn.speaker if isinstance(new_turn.speaker, str) else str(new_turn.speaker)
+                candidate_lines.append(f"{speaker_name}: {content}")
 
         if not candidate_lines:
             return self._format_conversation_summary(points)
@@ -738,7 +784,18 @@ class Meeting:
     def _summarize_round(self, new_turn: Turn) -> Dict[str, Any]:
         """SummaryProbe のペイロードを生成し返す。"""
 
-        result = self._summary_probe.generate_summary(new_turn, self.history)
+        try:
+            result = self._summary_probe.generate_summary(new_turn, self.history)
+        except Exception as exc:  # noqa: BLE001 - LLM呼び出し失敗時は握りつぶす
+            self.logger.append_warning(
+                "summary_probe_failed",
+                context={
+                    "error": str(exc),
+                    "turn_index": len(self.history),
+                    "speaker": getattr(new_turn, "speaker", ""),
+                },
+            )
+            return {"summary": ""}
         return result
 
     def _log_summary_probe(
