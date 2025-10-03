@@ -195,3 +195,25 @@ export async function startMeeting(payload) {
   }
   return res.json();
 }
+
+export async function getModels() {
+  const res = await fetch(withCacheBuster("/api/models"), {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    throw new Error(`fetch failed: ${res.status} /api/models`);
+  }
+  const payload = await res.json();
+  const list = Array.isArray(payload?.models) ? payload.models : Array.isArray(payload) ? payload : [];
+  return list
+    .map((item) => {
+      if (!item) return null;
+      if (typeof item === "string") return item;
+      if (typeof item.name === "string" && item.name.trim()) return item.name;
+      if (typeof item.model === "string" && item.model.trim()) return item.model;
+      if (typeof item.id === "string" && item.id.trim()) return item.id;
+      return null;
+    })
+    .filter((name, index, arr) => Boolean(name) && arr.indexOf(name) === index)
+    .sort((a, b) => a.localeCompare(b));
+}

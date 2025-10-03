@@ -12,6 +12,8 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,s
 .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 1px 10px rgba(0,0,0,.15)}
 .form .label{display:block;margin:12px 0}
 .input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0d0e13;color:var(--text)}
+.select{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:#0d0e13;color:var(--text);appearance:none}
+.select:disabled{opacity:.6;cursor:not-allowed}
 .grid-2{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
 .row-between{display:flex;align-items:center;justify-content:space-between}
 .badge{padding:4px 10px;border-radius:999px;font-size:12px;border:1px solid var(--border)}
@@ -29,6 +31,7 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:ui-sans-serif,s
 .btn.ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
 .muted{color:var(--muted);font-size:13px;margin-top:2px}
 .hint{color:var(--muted);font-size:12px;margin-top:8px}
+.hint.error{color:#ff9a9a}
 .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .kpi-grid.inline{margin-top:12px}
 .kpi{background:#0d0e13;border:1px solid var(--border);border-radius:12px;padding:12px}
