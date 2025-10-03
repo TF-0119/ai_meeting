@@ -110,6 +110,10 @@ class MeetingConfig(BaseModel):
         ge=0,
         description="プロンプトに注入する直近覚書の件数",
     )
+    personality_seed: Optional[int] = Field(
+        default=None,
+        description="個性テンプレートの抽選に用いる乱数シード。指定がない場合は環境値やシステム既定を利用する。",
+    )
     # --- Step 7: KPIフィードバック制御 ---
     kpi_window: int = 6  # 直近W発言でミニKPIを算出
     kpi_auto_prompt: bool = True  # 閾値割れで隠しプロンプトを注入

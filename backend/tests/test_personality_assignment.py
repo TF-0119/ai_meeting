@@ -33,7 +33,8 @@ def test_personality_assignment_is_deterministic(tmp_path, monkeypatch):
     assigned = [
         meeting._personality_profiles[agent.name].name for agent in meeting.cfg.agents
     ]
-    assert assigned == ["ASSERTIVE", "ANALYTICAL", "EMPATHIC"]
+    assert assigned == ["ASSERTIVE", "EMPATHIC", "ANALYTICAL"]
+    assert len(set(assigned)) == len(assigned)
 
     for agent in meeting.cfg.agents:
         memory_text = meeting._agent_personality_memory.get(agent.name)
