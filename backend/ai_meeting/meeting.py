@@ -510,41 +510,92 @@ class Meeting:
         )
         return self._enforce_chat_constraints(self.backend.generate(req)).strip()
 
+
     def _judge_thoughts(
         self,
         bundle: Dict[str, str],
         last_summary: str,
         flow_summary: str,
     ) -> Dict:
-        # エージェント名をキーにしたJSONだけを許可
         names = list(bundle.keys())
-        recent = self._recent_context(self.cfg.chat_window)
-        recent_text = recent if recent else "(発言なし)"
-        last_summary_text = last_summary if last_summary else "(未設定)"
-        flow_summary_text = flow_summary.strip() if flow_summary else "(未設定)"
-        sys = (
-            "あなたは中立の審査員です。各候補の『流れ適合/目的適合/質/新規性/実行性』を0〜1で採点し、"
-            "総合scoreを算出して勝者を1名だけ選びます。出力はJSONのみ。"
+        if not names:
+            return {"scores": {}, "winner": ""}
+
+        include_topic = bool(getattr(self.cfg, "think_judge_include_topic", True))
+        include_recent = bool(getattr(self.cfg, "think_judge_include_recent", True))
+        include_recent_summary = bool(
+            getattr(self.cfg, "think_judge_include_recent_summary", True)
         )
-        # 例は“実名”で示す（A/Bなどを使わない）
-        example_scores = ", ".join(
+        include_flow_summary = bool(
+            getattr(self.cfg, "think_judge_include_flow_summary", True)
+        )
+
+        if getattr(self, "_test_mode", False):
+            include_topic = include_recent = include_recent_summary = include_flow_summary = True
+
+        recent_text = ""
+        if include_recent:
+            recent = self._recent_context(self.cfg.chat_window)
+            recent_text = recent if recent else "(発言なし)"
+
+        last_summary_text = ""
+        if include_recent_summary:
+            last_summary_text = last_summary if last_summary else "(未設定)"
+
+        flow_summary_text = ""
+        if include_flow_summary:
+            flow_summary_text = flow_summary.strip() if flow_summary else "(未設定)"
+
+        example_candidates = names[:2] if names else ["NAME"]
+        example_lines = []
+        for candidate in example_candidates:
+            example_lines.append(
+                f'"{candidate}": {{"flow": 0.0, "goal": 0.0, "quality": 0.0, '
+                f'"novelty": 0.0, "action": 0.0, "score": 0.0, "rationale": "短文"}}'
+            )
+        example_scores_block = ",\n                ".join(example_lines)
+        example_json = textwrap.dedent(
+            f"""
+            出力JSON例:
+            {{
+              "scores": {{
+                {example_scores_block}
+              }},
+              "winner": "{names[0]}"
+            }}
+            """
+        ).strip()
+        sys = "\n".join(
             [
-                f"\"{n}\":{{\"flow\":0.0,\"goal\":0.0,\"quality\":0.0,\"novelty\":0.0,\"action\":0.0,\"score\":0.0,\"rationale\":\"短文\"}}"
-                for n in names[:2]
+                "あなたは中立の審査員です。各候補の『流れ適合/目的適合/質/新規性/実行性』を0〜1で採点し、総合scoreを算出して勝者を1名だけ選びます。",
+                "scores にはすべての候補名を含め、flow/goal/quality/novelty/action/score は 0〜1 の数値、rationale は60文字以内の短文にしてください。",
+                "出力はJSONのみとし、勝者は1名です。",
+                "",
+                example_json,
             ]
         )
-        schema = f"{{\"scores\":{{{example_scores}, ...}},\"winner\":\"{names[0]}\"}}"
-        lines = [f"{name}: {txt}" for name, txt in bundle.items()]
-        user = (
-            f"Topic: {self.cfg.topic}\n"
-            f"直近: {recent_text}\n"
-            f"直近要約: {last_summary_text}\n"
-            f"会話の流れサマリー:\n{flow_summary_text}\n\n"
-            "候補:\n"
-            + "\n".join(lines)
-            + "\n\nJSON形式で厳密に出力（キーは各候補の“名前”）：\n"
-            + schema
-        )
+
+
+
+        sections = []
+        context_lines = []
+        if include_topic:
+            context_lines.append(f"Topic: {self.cfg.topic}")
+        if include_recent and recent_text:
+            context_lines.append(f"直近発言: {recent_text}")
+        if include_recent_summary and last_summary_text:
+            context_lines.append(f"直近要約: {last_summary_text}")
+        if include_flow_summary and flow_summary_text:
+            context_lines.append("会話の流れサマリー:")
+            context_lines.append(flow_summary_text)
+        if context_lines:
+            sections.append("\n".join(context_lines))
+
+        candidate_lines = ["候補:"]
+        candidate_lines.extend(f"{name}: {txt}" for name, txt in bundle.items())
+        sections.append("\n".join(candidate_lines))
+
+        user = "\n\n".join(sections)
         req = LLMRequest(
             system=sys,
             messages=[{"role": "user", "content": user}],

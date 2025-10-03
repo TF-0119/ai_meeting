@@ -44,11 +44,16 @@ def _make_meeting(response: str, agent_names: Optional[List[str]] = None) -> Mee
         chat_max_sentences=2,
         chat_max_chars=120,
         chat_context_summary=True,
+        think_judge_include_topic=True,
+        think_judge_include_recent=True,
+        think_judge_include_recent_summary=True,
+        think_judge_include_flow_summary=True,
         agents=[SimpleNamespace(name=name, system="", style="") for name in agent_names],
     )
     meeting.history = []
     meeting.backend = _StubBackend(response)
     meeting._conversation_summary_points = []
+    meeting._test_mode = False
     return meeting
 
 
@@ -155,3 +160,47 @@ def test_judge_thoughts_prompt_includes_summaries() -> None:
     assert f"直近要約: {last_summary}" in prompt
     assert "会話の流れサマリー" in prompt
     assert "- Alice: こんにちは" in prompt
+
+
+def test_judge_thoughts_context_flags_disable() -> None:
+    """フラグを無効化すると対応する情報がプロンプトから除外される。"""
+
+    meeting = _make_meeting("{}", ["Alice"])
+    meeting.cfg.think_judge_include_topic = False
+    meeting.cfg.think_judge_include_recent = False
+    meeting.cfg.think_judge_include_recent_summary = False
+    meeting.cfg.think_judge_include_flow_summary = False
+
+    last_summary = "前回のまとめ"
+    flow_summary = meeting._conversation_summary()
+
+    meeting._judge_thoughts({"Alice": "案A"}, last_summary, flow_summary)
+
+    prompt = meeting.backend.requests[-1].messages[0]["content"]
+    assert "Topic:" not in prompt
+    assert "直近発言" not in prompt
+    assert "直近要約" not in prompt
+    assert "会話の流れサマリー" not in prompt
+    assert "候補:\nAlice: 案A" in prompt
+
+
+def test_judge_thoughts_flags_forced_in_test_mode() -> None:
+    """テストモードではフラグを無効化しても情報が保持される。"""
+
+    meeting = _make_meeting("{}", ["Alice"])
+    meeting._test_mode = True
+    meeting.cfg.think_judge_include_topic = False
+    meeting.cfg.think_judge_include_recent = False
+    meeting.cfg.think_judge_include_recent_summary = False
+    meeting.cfg.think_judge_include_flow_summary = False
+
+    last_summary = "前回のまとめ"
+    flow_summary = meeting._conversation_summary()
+
+    meeting._judge_thoughts({"Alice": "案A"}, last_summary, flow_summary)
+
+    prompt = meeting.backend.requests[-1].messages[0]["content"]
+    assert "Topic:" in prompt
+    assert "直近発言" in prompt
+    assert "直近要約" in prompt
+    assert "会話の流れサマリー" in prompt
