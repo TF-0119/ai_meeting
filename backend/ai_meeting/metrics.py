@@ -41,22 +41,36 @@ class MetricsLogger:
 
     def _init_gpu_backend(self) -> None:
         try:
+            from nvidia import nvml
+
+            nvml.nvmlInit()
+            self.nv = nvml
+            self._gpu_backend = "nvml"
+            return
+        except Exception:
+            pass
+
+        try:
             import pynvml
 
             pynvml.nvmlInit()
             self.nv = pynvml
             self._gpu_backend = "pynvml"
+            return
         except Exception:
-            try:
-                import GPUtil  # noqa: F401
+            pass
 
-                self._gpu_backend = "gputil"
-            except Exception:
-                self._gpu_backend = None
+        self.nv = None
+        try:
+            import GPUtil  # noqa: F401
+
+            self._gpu_backend = "gputil"
+        except Exception:
+            self._gpu_backend = None
 
     def _poll_gpu(self):
         util = mem_used = mem_total = temp = power = None
-        if self._gpu_backend == "pynvml":
+        if self.nv is not None:
             try:
                 h = self.nv.nvmlDeviceGetHandleByIndex(0)
                 util = float(self.nv.nvmlDeviceGetUtilizationRates(h).gpu)
