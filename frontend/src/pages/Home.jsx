@@ -56,6 +56,10 @@ export default function Home() {
   const [participants, setParticipants] = useState(defaultParticipants);
   const [presetLoaded, setPresetLoaded] = useState(false);
 
+  const resolvedMaxPhasesValue = formState.maxPhases === "" ? "1" : formState.maxPhases;
+  const resolvedChatMaxSentencesValue =
+    formState.chatMaxSentences === "" ? "2" : formState.chatMaxSentences;
+
   const handleParticipantChange = (id, field, value) => {
     setParticipants((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
   };
@@ -299,11 +303,33 @@ export default function Home() {
         <div className="grid-2">
           <label className="label">
             精密度 (1-10)
-            <input className="input" type="number" min={1} max={10} value={formState.precision} onChange={(e) => dispatch({ type: "update", field: "precision", value: e.target.value })} />
+            <div className="slider-control">
+              <input
+                className="range-input"
+                type="range"
+                min={1}
+                max={10}
+                step={1}
+                value={formState.precision}
+                onChange={(e) => dispatch({ type: "update", field: "precision", value: e.target.value })}
+              />
+              <span className="slider-value">{formState.precision}</span>
+            </div>
           </label>
           <label className="label">
             ラウンド数
-            <input className="input" type="number" min={1} max={12} value={formState.rounds} onChange={(e) => dispatch({ type: "update", field: "rounds", value: e.target.value })} />
+            <div className="slider-control">
+              <input
+                className="range-input"
+                type="range"
+                min={1}
+                max={12}
+                step={1}
+                value={formState.rounds}
+                onChange={(e) => dispatch({ type: "update", field: "rounds", value: e.target.value })}
+              />
+              <span className="slider-value">{formState.rounds}</span>
+            </div>
           </label>
         </div>
 
@@ -390,15 +416,26 @@ export default function Home() {
 
               <label className="label">
                 フェーズ数の上限
-                <input
-                  className="input"
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={formState.maxPhases}
-                  onChange={(e) => dispatch({ type: "update", field: "maxPhases", value: e.target.value })}
-                  placeholder="未設定"
-                />
+                <div className="slider-control">
+                  <input
+                    className="range-input"
+                    type="range"
+                    min={1}
+                    max={10}
+                    step={1}
+                    value={resolvedMaxPhasesValue}
+                    onChange={(e) => dispatch({ type: "update", field: "maxPhases", value: e.target.value })}
+                  />
+                  <span className="slider-value">{formState.maxPhases || "未設定"}</span>
+                  <button
+                    type="button"
+                    className="slider-reset"
+                    onClick={() => dispatch({ type: "update", field: "maxPhases", value: "" })}
+                    disabled={formState.maxPhases === ""}
+                  >
+                    クリア
+                  </button>
+                </div>
                 <div className="hint">1〜10 の範囲で指定できます。空欄にすると自動判定に任せます。</div>
               </label>
 
@@ -417,15 +454,26 @@ export default function Home() {
 
               <label className="label">
                 チャット最大文数
-                <input
-                  className="input"
-                  type="number"
-                  min={1}
-                  max={6}
-                  value={formState.chatMaxSentences}
-                  onChange={(e) => dispatch({ type: "update", field: "chatMaxSentences", value: e.target.value })}
-                  placeholder="2 (既定)"
-                />
+                <div className="slider-control">
+                  <input
+                    className="range-input"
+                    type="range"
+                    min={1}
+                    max={6}
+                    step={1}
+                    value={resolvedChatMaxSentencesValue}
+                    onChange={(e) => dispatch({ type: "update", field: "chatMaxSentences", value: e.target.value })}
+                  />
+                  <span className="slider-value">{formState.chatMaxSentences || "既定 (2)"}</span>
+                  <button
+                    type="button"
+                    className="slider-reset"
+                    onClick={() => dispatch({ type: "update", field: "chatMaxSentences", value: "" })}
+                    disabled={formState.chatMaxSentences === ""}
+                  >
+                    クリア
+                  </button>
+                </div>
                 <div className="hint">1〜6 の範囲で設定できます。空欄なら既定値 2 を利用します。</div>
               </label>
             </div>
