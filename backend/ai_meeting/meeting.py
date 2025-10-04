@@ -22,7 +22,7 @@ from .logging import LiveLogWriter
 from .metrics import MetricsLogger
 from .summary_probe import SummaryProbe
 from .testing import NullMetricsLogger, is_test_mode, setup_test_environment
-from .utils import banner, clamp
+from .utils import banner, clamp, safe_console_print
 from .phase import PhaseState
 
 
@@ -1099,21 +1099,23 @@ class Meeting:
 
     def run(self) -> None:
         banner("AI Meeting Start")
-        print(f"Topic: {self.cfg.topic}")
-        print(f"Agents: {[a.name for a in self.cfg.agents]}")
-        print(f"Precision: {self.cfg.precision} (Temp={self.temperature:.2f}, CritiquePasses={self.critique_passes})")
-        print(f"Rounds (互換用): {self.cfg.rounds}")
+        safe_console_print(f"Topic: {self.cfg.topic}")
+        safe_console_print(f"Agents: {[a.name for a in self.cfg.agents]}")
+        safe_console_print(
+            f"Precision: {self.cfg.precision} (Temp={self.temperature:.2f}, CritiquePasses={self.critique_passes})"
+        )
+        safe_console_print(f"Rounds (互換用): {self.cfg.rounds}")
         phase_limit = self.cfg.get_phase_turn_limit()
         if phase_limit is not None:
-            print(f"Phase Turn Limit: {phase_limit}")
+            safe_console_print(f"Phase Turn Limit: {phase_limit}")
         if isinstance(self.cfg.phase_turn_limit, dict):
-            print(f"Phase Turn Map: {self.cfg.phase_turn_limit}")
+            safe_console_print(f"Phase Turn Map: {self.cfg.phase_turn_limit}")
         if self.cfg.max_phases:
-            print(f"Max Phases: {self.cfg.max_phases}")
+            safe_console_print(f"Max Phases: {self.cfg.max_phases}")
         goal_default = self.cfg.get_phase_goal()
         if goal_default:
-            print(f"Phase Goal (default): {goal_default}")
-        print()
+            safe_console_print(f"Phase Goal (default): {goal_default}")
+        safe_console_print("")
 
         self._assign_personalities()
 
@@ -1121,11 +1123,11 @@ class Meeting:
         order = self.cfg.agents[:]  # 発言順
         global_turn = 0
         if phase_limit is not None and phase_limit <= 0:
-            print("Phase Turn Limit が0以下のため、会議を開始せず終了します。")
+            safe_console_print("Phase Turn Limit が0以下のため、会議を開始せず終了します。")
             self.metrics.stop()
             return
         if phase_limit is None:
-            print("Phase Turn Limit が設定されていないため、会議を開始せず終了します。")
+            safe_console_print("Phase Turn Limit が設定されていないため、会議を開始せず終了します。")
             self.metrics.stop()
             return
         while self._phase_state and not self._phase_state.is_completed():
@@ -1157,7 +1159,7 @@ class Meeting:
                         }
                     )
                 self.history.append(Turn(speaker=winner.name, content=content))
-                print(
+                safe_console_print(
                     f"{winner.name}: {content}\n"
                     if self.cfg.ui_minimal
                     else f"{winner.name}:\n{content}\n"
@@ -1185,7 +1187,7 @@ class Meeting:
                         tmp = self._critic_pass(tmp)
                     content = tmp
                 self.history.append(Turn(speaker=speaker.name, content=content))
-                print(f"{speaker.name}: {content}\n")
+                safe_console_print(f"{speaker.name}: {content}\n")
                 self.logger.append_turn(
                     round_idx,
                     len(self.history),
@@ -1302,7 +1304,11 @@ class Meeting:
                     self._handle_phase_event(event)
 
             if getattr(current_speaker, "reveal_think", False):
-                print(textwrap.indent(f"(思考ログ/自己検証)\n{last_summary}", prefix="    "))  # 簡易版
+                safe_console_print(
+                    textwrap.indent(
+                        f"(思考ログ/自己検証)\n{last_summary}", prefix="    "
+                    )
+                )  # 簡易版
             # ショックの寿命（ターン末にデクリメント）
             if getattr(self, "_shock_ttl", 0) > 0:
                 self._shock_ttl -= 1
@@ -1381,7 +1387,7 @@ class Meeting:
             )
         )
         banner("Final Decision / 合意案")
-        print(final)
+        safe_console_print(final)
         self.logger.append_final(final)
 
         # Step6: KPI 評価と保存（最後の Meeting クラスにも入れる）
@@ -1391,9 +1397,11 @@ class Meeting:
             pending = getattr(self, "_pending", None)
             kpi_result = evaluator.evaluate(self.history, pending, final)
             self.logger.append_kpi(kpi_result)
-            print("\n=== KPI ===\n" + json.dumps(kpi_result, ensure_ascii=False, indent=2))
+            safe_console_print(
+                "\n=== KPI ===\n" + json.dumps(kpi_result, ensure_ascii=False, indent=2)
+            )
         except Exception as e:
-            print(f"[KPI] 評価で例外: {e}")
+            safe_console_print(f"[KPI] 評価で例外: {e}")
 
         live_paths = []
         if self.logger.md:
@@ -1401,9 +1409,9 @@ class Meeting:
         if self.logger.jsonl:
             live_paths.append(str(self.logger.jsonl))
         if live_paths:
-            print(f"\n（ライブログ: {' / '.join(live_paths)}）")
+            safe_console_print(f"\n（ライブログ: {' / '.join(live_paths)}）")
         result_path = self.logger.dir / "meeting_result.json"
-        print(f"\n（保存: {result_path}）")
+        safe_console_print(f"\n（保存: {result_path}）")
         base_dir = self.logger.dir
 
         def _relative(path: Path) -> str:
@@ -1458,7 +1466,7 @@ class Meeting:
         # メトリクス停止＆グラフ作成
         try:
             self.metrics.stop()
-            print(
+            safe_console_print(
                 f"（メトリクス: {self.logger.dir / 'metrics.csv'}, {self.logger.dir / 'metrics_cpu_mem.png'}, {self.logger.dir / 'metrics_gpu.png'}）"
             )
         except Exception:
@@ -1499,7 +1507,7 @@ class Meeting:
             if self.critique_passes > 0:
                 content = self._critic_pass(content)
             self.history.append(Turn(speaker=agent.name, content=content))
-            print(f"{agent.name}:\n{content}\n")
+            safe_console_print(f"{agent.name}:\n{content}\n")
 
             phase_turn = state.turn_count + 1
             round_idx = self._phase_round_index(state, phase_turn)
