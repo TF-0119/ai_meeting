@@ -1362,7 +1362,7 @@ class Meeting:
             self.logger.append_phase(self._phase_payload(closing_event, closed_state))
 
         # --- 残課題消化ラウンド（任意） ---
-        if self.cfg.resolve_round and self._pending.items:
+        if self.cfg.resolve_phase and self._pending.items:
             banner("Resolution Round / 残課題の消化")
             last_summary, global_turn = self._run_resolution_phase(order, last_summary, global_turn)
 
@@ -1451,7 +1451,7 @@ class Meeting:
                     "phase_turn_limit": self.cfg.phase_turn_limit,
                     "max_phases": self.cfg.max_phases,
                     "phase_goal": self.cfg.phase_goal,
-                    "resolve_round": self.cfg.resolve_round,
+                    "resolve_phase": self.cfg.resolve_phase,
                     "agents": [a.model_dump() for a in self.cfg.agents],
                     "turns": [t.__dict__ for t in self.history],
                     "phases": self._serialize_phases(),

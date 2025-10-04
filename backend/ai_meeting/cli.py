@@ -52,9 +52,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     ap.add_argument("--ollama-url", default=None, help="Ollama のベースURL（例: http://127.0.0.1:11434）")
     ap.add_argument(
         "--no-resolve-round",
-        dest="resolve_round",
+        dest="resolve_phase",
         action="store_false",
-        help="最後の“残課題消化ラウンド”を無効化する",
+        help="最後の“残課題消化フェーズ”を無効化する（互換オプション）",
     )
     # 短文チャット（既定ON。OFFにしたいときだけ指定）
     ap.add_argument(
@@ -238,7 +238,6 @@ def build_meeting_config(args: argparse.Namespace) -> MeetingConfig:
     cfg = MeetingConfig(
         topic=args.topic,
         precision=clamp(args.precision, 1, 10),
-        rounds=rounds_value,
         max_phases=args.max_phases,
         phase_turn_limit=phase_limit,
         phase_goal=phase_goal,
@@ -247,7 +246,7 @@ def build_meeting_config(args: argparse.Namespace) -> MeetingConfig:
         openai_model=args.openai_model or os.getenv("OPENAI_MODEL"),
         ollama_model=args.ollama_model or os.getenv("OLLAMA_MODEL"),
         ollama_url=args.ollama_url or os.getenv("OLLAMA_URL"),
-        resolve_round=getattr(args, "resolve_round", True),
+        resolve_phase=getattr(args, "resolve_phase", True),
         chat_mode=getattr(args, "chat_mode", True),
         chat_max_sentences=args.chat_max_sentences,
         chat_max_chars=args.chat_max_chars,

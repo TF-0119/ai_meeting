@@ -25,7 +25,7 @@ def _create_config(outdir: Path) -> MeetingConfig:
             AgentConfig(name="Bob", system="視点を補う"),
         ],
         phase_turn_limit=2,
-        resolve_round=False,
+        resolve_phase=False,
         think_debug=False,
         summary_probe_enabled=True,
         summary_probe_log_enabled=True,
