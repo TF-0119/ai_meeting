@@ -317,7 +317,7 @@ export default function Home() {
             </div>
           </label>
           <label className="label">
-            ラウンド数
+            フェーズターン上限（簡易設定）
             <div className="slider-control">
               <input
                 className="range-input"

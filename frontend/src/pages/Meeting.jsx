@@ -141,7 +141,7 @@ export default function Meeting() {
           {resultReady
             ? "バックエンドから受け取った最終要約です。"
             : summary
-              ? "バックエンド計算の最新ラウンド要約です。"
+              ? "バックエンド計算の最新フェーズ要約です。"
               : "要約算出を待機中です。"}
         </div>
         <div className="hint">
