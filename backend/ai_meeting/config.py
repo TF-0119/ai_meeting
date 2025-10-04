@@ -33,19 +33,14 @@ class MeetingConfig(BaseModel):
 
     topic: str = Field(..., description="会議テーマ（1文）")
     precision: int = Field(5, ge=1, le=10, description="精密性(1=発散, 10=厳密)")
-    rounds: Optional[int] = Field(
-        None,
-        ge=0,
-        description="非推奨: フェーズ内ターン上限（phase_turn_limit）のエイリアス",
-    )
     max_phases: Optional[int] = Field(
         None,
         ge=1,
         description="全体で許容するフェーズ数の上限。Noneなら制限なし",
     )
     phase_turn_limit: Optional[Union[int, Dict[str, int]]] = Field(
-        4,
-        description="各フェーズのターン数上限（intで共通・dictで種類別）",
+        None,
+        description="各フェーズのターン数上限（intで共通・dictで種類別、未設定なら自動導出）",
     )
     phase_goal: Optional[Union[str, Dict[str, str]]] = Field(
         None, description="フェーズごとの目的（'discussion=議題整理' のように指定）"
@@ -56,7 +51,7 @@ class MeetingConfig(BaseModel):
     ollama_model: Optional[str] = None
     ollama_url: Optional[str] = None
     max_tokens: int = 800
-    resolve_round: bool = True  # 最後に「残課題消化ラウンド」を自動挿入
+    resolve_phase: bool = True  # 最後に「残課題消化フェーズ」を自動挿入
     # --- 短文チャット（既定ON） ---
     chat_mode: bool = True
     chat_max_sentences: int = 2
@@ -135,36 +130,22 @@ class MeetingConfig(BaseModel):
     }
 
     def model_post_init(self, __context: Any) -> None:  # noqa: D401 - BaseModel規約
-        """Pydantic初期化後にレガシーroundsフィールドを整合させる。"""
+        """Pydantic初期化後にフェーズ関連の未設定値を補完する。"""
 
-        # rounds 指定だけで phase_turn_limit が未設定の場合は値を引き継ぐ
-        if (self.phase_turn_limit is None or self.phase_turn_limit == 0) and isinstance(
-            self.rounds, int
-        ):
-            self.phase_turn_limit = self.rounds
+        # phase_turn_limit が未指定または0以下ならエージェント数から自動導出
+        if self.phase_turn_limit in (None, 0):
+            auto_limit = len(self.agents)
+            self.phase_turn_limit = auto_limit if auto_limit > 0 else None
+        elif isinstance(self.phase_turn_limit, int) and self.phase_turn_limit < 0:
+            self.phase_turn_limit = None
 
-        # phase_turn_limit が整数なら rounds へミラーリング（互換用途）
-        if isinstance(self.phase_turn_limit, int):
-            if self.phase_turn_limit < 0:
-                self.phase_turn_limit = max(0, self.phase_turn_limit)
-            self.rounds = max(0, self.phase_turn_limit)
-            return
-
-        # dict指定の場合は discussion/default を優先して rounds を埋める
+        # dict指定時も負数が混ざっていれば除去
         if isinstance(self.phase_turn_limit, dict):
-            for key in ("discussion", "default"):
-                value = self.phase_turn_limit.get(key)
+            normalized: Dict[str, int] = {}
+            for key, value in self.phase_turn_limit.items():
                 if isinstance(value, int) and value > 0:
-                    self.rounds = value
-                    break
-            else:
-                self.rounds = 0
-        else:
-            # phase_turn_limit も rounds も無効ならデフォルト4ラウンドとして扱う
-            if self.rounds is None:
-                self.rounds = 4
-            if self.phase_turn_limit is None:
-                self.phase_turn_limit = self.rounds
+                    normalized[key] = value
+            self.phase_turn_limit = normalized or None
 
     def runtime_params(self) -> Dict[str, Union[float, int]]:
         """precision に応じた温度やクリティーク回数を算出する。"""
@@ -188,9 +169,16 @@ class MeetingConfig(BaseModel):
                 return candidate
         elif isinstance(value, int) and value > 0:
             return value
-        if isinstance(self.rounds, int) and self.rounds > 0:
-            return self.rounds
+        auto_limit = len(self.agents)
+        if auto_limit > 0:
+            return auto_limit
         return None
+
+    @property
+    def rounds(self) -> Optional[int]:
+        """互換用途: 廃止予定のラウンド数アクセサ。"""
+
+        return self.get_phase_turn_limit()
 
     def get_phase_goal(self, kind: str = "discussion") -> Optional[str]:
         """フェーズ種別に紐づく目標テキストを返す。"""

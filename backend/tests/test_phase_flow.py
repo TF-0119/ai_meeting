@@ -22,7 +22,7 @@ def test_meeting_result_includes_phase_timeline(tmp_path: Path, monkeypatch, pen
         phase_turn_limit={"discussion": 1, "resolution": 1},
         phase_goal={"discussion": "議題を整理", "resolution": "残課題を解消"},
         max_phases=4,
-        resolve_round=True,
+        resolve_phase=True,
         outdir=str(outdir),
     )
     meeting = Meeting(cfg)

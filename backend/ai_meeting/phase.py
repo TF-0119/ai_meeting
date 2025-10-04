@@ -17,7 +17,6 @@ class PhaseState:
     turn_limit: Optional[int] = None
     turn_count: int = 0
     kind: str = "discussion"
-    legacy_round_base: int = 0
 
     def register_turn(self, turn_index: int, unresolved_count: int) -> None:
         """フェーズ内で1ターン進行したことを記録する。"""
