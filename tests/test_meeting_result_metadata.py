@@ -23,7 +23,7 @@ def _create_config(outdir: Path) -> MeetingConfig:
             AgentConfig(name="Bob", system="補足視点を出す"),
         ],
         phase_turn_limit=1,
-        resolve_round=False,
+        resolve_phase=False,
         think_debug=False,
         log_markdown_enabled=False,
         log_jsonl_enabled=True,
