@@ -60,7 +60,7 @@
     "phase_turn_limit": 2,
     "max_phases": null,
     "phase_goal": null,
-    "resolve_round": true,
+    "resolve_phase": true,
     "agents": [
       {
         "name": "Alice",

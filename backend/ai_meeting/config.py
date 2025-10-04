@@ -51,7 +51,11 @@ class MeetingConfig(BaseModel):
     ollama_model: Optional[str] = None
     ollama_url: Optional[str] = None
     max_tokens: int = 800
-    resolve_phase: bool = True  # 最後に「残課題消化フェーズ」を自動挿入
+    resolve_phase: bool = Field(
+        True,
+        alias="resolve_round",
+        description="互換用途: resolve_round の旧設定名を許容",
+    )  # 最後に「残課題消化フェーズ」を自動挿入
     # --- 短文チャット（既定ON） ---
     chat_mode: bool = True
     chat_max_sentences: int = 2
@@ -127,6 +131,7 @@ class MeetingConfig(BaseModel):
 
     model_config = {
         "validate_assignment": True,
+        "populate_by_name": True,
     }
 
     def model_post_init(self, __context: Any) -> None:  # noqa: D401 - BaseModel規約
