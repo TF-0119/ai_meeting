@@ -37,7 +37,6 @@ export default function Home() {
       topic: "",
       precision: "5",
       rounds: "4",
-      agents: "",
       backend: "ollama",
       model: "",
       openaiKeyRequired: false,
@@ -56,10 +55,6 @@ export default function Home() {
   );
   const [participants, setParticipants] = useState(defaultParticipants);
   const [presetLoaded, setPresetLoaded] = useState(false);
-  const agentsPreview = useMemo(
-    () => buildAgentsString(participants, formState.agents),
-    [participants, formState.agents],
-  );
 
   const handleParticipantChange = (id, field, value) => {
     setParticipants((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
@@ -104,7 +99,6 @@ export default function Home() {
           "topic",
           "precision",
           "rounds",
-          "agents",
           "backend",
           "model",
           "phaseTurnLimit",
@@ -131,11 +125,8 @@ export default function Home() {
           dispatch({ type: "hydrate", value: patch, openaiConfigured });
         }
       }
-      const baseAgents = typeof form?.agents === "string" ? form.agents : "";
-      const derivedParticipants = deriveParticipants(storedParticipants, baseAgents);
-      if (Array.isArray(storedParticipants)) {
-        setParticipants(derivedParticipants);
-      } else if (derivedParticipants.length) {
+      const derivedParticipants = deriveParticipants(storedParticipants);
+      if (Array.isArray(derivedParticipants)) {
         setParticipants(derivedParticipants);
       }
     }
@@ -169,7 +160,7 @@ export default function Home() {
       const roundsValueRaw = Number(formState.rounds);
       const precisionValue = Number.isFinite(precisionValueRaw) ? precisionValueRaw : undefined;
       const roundsValue = Number.isFinite(roundsValueRaw) ? roundsValueRaw : undefined;
-      const finalAgentsValue = buildAgentsString(participants, formState.agents);
+      const finalAgentsValue = buildAgentsString(participants);
       if (!finalAgentsValue) {
         throw new Error("参加者を1人以上設定してください。");
       }
@@ -335,23 +326,6 @@ export default function Home() {
           />
           <div className="hint">各参加者の名前と任意のシステムプロンプトを設定できます。</div>
         </div>
-
-        <label className="label">
-          追加の参加者指定（文字列入力）
-          <input
-            className="input"
-            value={formState.agents}
-            onChange={(e) => dispatch({ type: "update", field: "agents", value: e.target.value })}
-            placeholder="例: Observer Analyst"
-          />
-          <div className="hint">
-            従来形式の空白区切り指定や <code>name=prompt</code> 形式をそのまま入力できます。
-          </div>
-          <div className="hint">
-            送信される値: {agentsPreview ? <code className="participant-preview">{agentsPreview}</code> : "（未設定）"}
-          </div>
-        </label>
-
         <div className="grid-2">
           <label className="label">
             バックエンド
@@ -547,8 +521,6 @@ const DEFAULT_PARTICIPANT_DATA = [
   { name: "Carol", prompt: "" },
 ];
 
-const WHITESPACE_RE = /\s/;
-
 function createParticipantId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -569,105 +541,20 @@ function createParticipantsFromData(list) {
   return list.map((item) => createParticipantEntry(item?.name ?? "", item?.prompt ?? ""));
 }
 
-function deriveParticipants(savedList, fallbackAgents) {
-  if (Array.isArray(savedList)) {
-    return createParticipantsFromData(savedList);
+function deriveParticipants(savedList) {
+  if (!Array.isArray(savedList)) {
+    return null;
   }
-  const parsed = parseAgentsString(fallbackAgents);
-  if (parsed.length) {
-    return createParticipantsFromData(parsed);
-  }
-  return [];
+  return createParticipantsFromData(savedList);
 }
 
-function parseAgentsString(text) {
-  if (typeof text !== "string" || !text.trim()) return [];
-  const tokens = splitAgentsString(text);
-  return tokens
-    .map((token) => {
-      const [namePart, promptPart] = token.split("=", 2);
-      const name = (namePart ?? "").trim();
-      if (!name) return null;
-      const prompt = promptPart !== undefined ? promptPart.trim() : "";
-      return { name, prompt };
-    })
+function buildAgentsString(participants) {
+  if (!Array.isArray(participants) || participants.length === 0) {
+    return "";
+  }
+  const tokens = participants
+    .map((participant) => createAgentToken(participant))
     .filter(Boolean);
-}
-
-function splitAgentsString(input) {
-  if (typeof input !== "string" || !input) return [];
-  const tokens = [];
-  let current = "";
-  let quote = "";
-  let justClosedQuote = false;
-
-  for (let i = 0; i < input.length; i += 1) {
-    const char = input[i];
-
-    if (quote) {
-      if (char === "\\") {
-        if (i + 1 < input.length) {
-          current += input[i + 1];
-          i += 1;
-        }
-        justClosedQuote = false;
-        continue;
-      }
-      if (char === quote) {
-        quote = "";
-        justClosedQuote = true;
-        continue;
-      }
-      current += char;
-      justClosedQuote = false;
-      continue;
-    }
-
-    if (char === '"' || char === "'") {
-      quote = char;
-      continue;
-    }
-
-    if (WHITESPACE_RE.test(char)) {
-      if (current || justClosedQuote) {
-        tokens.push(current);
-        current = "";
-        justClosedQuote = false;
-      }
-      continue;
-    }
-
-    if (char === "\\" && i + 1 < input.length) {
-      current += input[i + 1];
-      i += 1;
-      justClosedQuote = false;
-      continue;
-    }
-
-    current += char;
-    justClosedQuote = false;
-  }
-
-  if (current || justClosedQuote) {
-    tokens.push(current);
-  }
-
-  return tokens;
-}
-
-function buildAgentsString(participants, extraText) {
-  const tokens = [];
-  if (Array.isArray(participants)) {
-    participants.forEach((participant) => {
-      const token = createAgentToken(participant);
-      if (token) {
-        tokens.push(token);
-      }
-    });
-  }
-  if (typeof extraText === "string" && extraText.trim()) {
-    tokens.push(extraText.trim());
-  }
   return tokens.join(" ").trim();
 }
 
