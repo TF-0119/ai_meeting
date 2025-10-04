@@ -211,7 +211,6 @@ class Meeting:
         self._phase_id = 0
         self._unresolved_history: List[int] = []
         self._phases: List[PhaseState] = []
-        self._legacy_round_offset: int = 0
         self._phase_state: Optional[PhaseState] = None
         self._phase_state = self._begin_phase(
             PhaseEvent(
@@ -253,7 +252,6 @@ class Meeting:
             status=event.status,
             kind=kind,
             turn_limit=self.cfg.get_phase_turn_limit(kind),
-            legacy_round_base=self._legacy_round_offset,
         )
         self._phase_state = state
         self._phase_id = phase_id
@@ -274,12 +272,10 @@ class Meeting:
             turn_limit=self._phase_state.turn_limit,
             turn_count=self._phase_state.turn_count,
             kind=self._phase_state.kind,
-            legacy_round_base=self._phase_state.legacy_round_base,
         )
         self._phase_state = None
         self._phase_id = phase_id
         self._phases.append(closed_state)
-        self._legacy_round_offset = closed_state.legacy_round_base + closed_state.turn_count
         return closed_state
 
     def _phase_payload(self, event: PhaseEvent, state: Optional[PhaseState]) -> Dict:
@@ -296,7 +292,7 @@ class Meeting:
     def _phase_round_index(self, state: PhaseState, phase_turn: int) -> int:
         """フェーズ情報から互換ラウンド番号を算出する。"""
 
-        return state.legacy_round_base + phase_turn
+        return state.start_turn + phase_turn - 1
 
     def _phase_state_to_dict(self, state: PhaseState) -> Dict[str, Any]:
         """PhaseState を辞書化し、目標情報を付加する。"""
@@ -305,6 +301,7 @@ class Meeting:
         goal = self.cfg.get_phase_goal(state.kind)
         if goal:
             data["goal"] = goal
+        data["legacy_round_base"] = state.start_turn - 1
         return data
 
     def _serialize_phases(self) -> List[Dict[str, Any]]:
@@ -1172,7 +1169,7 @@ class Meeting:
                     phase_id=current_phase.id,
                     phase_turn=phase_turn,
                     phase_kind=current_phase.kind,
-                    phase_base=current_phase.legacy_round_base,
+                    phase_base=current_phase.start_turn - 1,
                 )
                 current_speaker = winner
                 self._last_spoke[current_speaker.name] = global_turn
@@ -1196,7 +1193,7 @@ class Meeting:
                     phase_id=current_phase.id,
                     phase_turn=phase_turn,
                     phase_kind=current_phase.kind,
-                    phase_base=current_phase.legacy_round_base,
+                    phase_base=current_phase.start_turn - 1,
                 )
                 current_speaker = speaker
                 self._last_spoke[current_speaker.name] = global_turn
@@ -1280,7 +1277,7 @@ class Meeting:
                 phase_id=current_phase.id,
                 phase_turn=phase_turn,
                 phase_kind=current_phase.kind,
-                phase_base=current_phase.legacy_round_base,
+                phase_base=current_phase.start_turn - 1,
             )
             self._log_summary_probe(
                 turn=self.history[-1],
@@ -1288,7 +1285,7 @@ class Meeting:
                 phase_id=current_phase.id,
                 phase_turn=phase_turn,
                 phase_kind=current_phase.kind,
-                phase_base=current_phase.legacy_round_base,
+                phase_base=current_phase.start_turn - 1,
                 payload=summary_payload,
             )
             self._pending.add_from_text(last_summary)
@@ -1519,7 +1516,7 @@ class Meeting:
                 phase_id=state.id,
                 phase_turn=phase_turn,
                 phase_kind=state.kind,
-                phase_base=state.legacy_round_base,
+                phase_base=state.start_turn - 1,
             )
             summary_payload = self._summarize_round(self.history[-1])
             last_summary = self._dedupe_bullets(summary_payload.get("summary", ""))
@@ -1539,7 +1536,7 @@ class Meeting:
                 phase_id=state.id,
                 phase_turn=phase_turn,
                 phase_kind=state.kind,
-                phase_base=state.legacy_round_base,
+                phase_base=state.start_turn - 1,
             )
             self._log_summary_probe(
                 turn=self.history[-1],
@@ -1547,7 +1544,7 @@ class Meeting:
                 phase_id=state.id,
                 phase_turn=phase_turn,
                 phase_kind=state.kind,
-                phase_base=state.legacy_round_base,
+                phase_base=state.start_turn - 1,
                 payload=summary_payload,
             )
             unresolved_count = len(self._pending.items)
