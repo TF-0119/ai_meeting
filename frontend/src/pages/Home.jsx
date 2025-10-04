@@ -683,10 +683,12 @@ function createAgentToken(participant) {
 }
 
 function needsQuoting(value) {
-  return /[\s"]/u.test(value);
+  return /[\s"']/u.test(value);
 }
 
 function quoteToken(value) {
   const escaped = value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
   return `"${escaped}"`;
 }
+
+export { createAgentToken, needsQuoting, quoteToken };
