@@ -8,6 +8,7 @@ from backend.defaults import DEFAULT_AGENT_STRING, DEFAULT_AGENT_NAMES
 from pathlib import Path
 from typing import Optional, Dict, List, Union, Any
 from urllib.parse import urlparse
+from uuid import uuid4
 import psutil
 import httpx, sys, os
 import subprocess, shlex, re, time, threading
@@ -86,6 +87,26 @@ def _ensure_int_string(value: Any, field_name: str, *, minimum: int = 0, maximum
     """_ensure_int のラッパー。CLI 渡し用に文字列へ変換する。"""
 
     return str(_ensure_int(value, field_name, minimum=minimum, maximum=maximum))
+
+
+def _create_unique_outdir(base: Path) -> Path:
+    """既存と衝突しない outdir を作成して返す。"""
+
+    candidate = base
+    counter = 1
+
+    while True:
+        try:
+            candidate.mkdir(parents=True, exist_ok=False)
+        except FileExistsError:
+            if counter <= 99:
+                candidate = base.parent / f"{base.name}-{counter:02d}"
+                counter += 1
+            else:
+                candidate = base.parent / f"{base.name}-{uuid4().hex[:8]}"
+                counter = 1
+        else:
+            return candidate.resolve()
 
 
 class StartMeetingLLMOptions(BaseModel):
@@ -392,9 +413,8 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
 
     ts = time.strftime("%Y%m%d-%H%M%S")
     slug = _slugify(body.topic)
-    outdir = (Path(body.outdir) if body.outdir
-              else LOGS_ROOT / f"{ts}_{slug}")
-    outdir.mkdir(parents=True, exist_ok=True)
+    base_outdir = Path(body.outdir) if body.outdir else LOGS_ROOT / f"{ts}_{slug}"
+    outdir = _create_unique_outdir(base_outdir)
 
     # 404防止のプレースホルダーを先に作る
     (outdir / "meeting_live.jsonl").touch()
