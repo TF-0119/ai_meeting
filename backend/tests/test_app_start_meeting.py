@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import itertools
 import sys
 import types
 
@@ -34,10 +35,15 @@ class _DummyProcess:
 
 
 def _setup_popen(monkeypatch, store: dict) -> None:
+    pid_counter = itertools.count(4321)
+
     def _fake_popen(cmd_list, stdout, stderr, cwd, env, creationflags):  # noqa: ANN001 - テスト用
+        pid = next(pid_counter)
+        store.setdefault("cmd_list_history", []).append(list(cmd_list))
         store["cmd_list"] = list(cmd_list)
         store["env"] = dict(env)
-        return _DummyProcess()
+        store.setdefault("pid_history", []).append(pid)
+        return _DummyProcess(pid)
 
     monkeypatch.setattr(app_module.subprocess, "Popen", _fake_popen)
 
@@ -181,3 +187,49 @@ def test_start_meeting_rejects_empty_agent_name(monkeypatch, tmp_path):
     assert response.status_code == 400
     assert response.json()["detail"] == "agent names must not be empty"
     assert "cmd_list" not in store
+
+
+def test_start_meeting_creates_unique_outdir(monkeypatch, tmp_path):
+    store: dict = {}
+    _setup_popen(monkeypatch, store)
+    monkeypatch.setattr(app_module, "_processes", {})
+
+    base = tmp_path / "duplicate"
+
+    with TestClient(app_module.app) as client:
+        first_response = client.post(
+            "/meetings",
+            json={
+                "topic": "重複回避テスト",  # noqa: RU002 - テストデータ
+                "agents": "Alice Bob",
+                "outdir": str(base),
+            },
+        )
+        second_response = client.post(
+            "/meetings",
+            json={
+                "topic": "重複回避テスト",  # noqa: RU002 - テストデータ
+                "agents": "Alice Bob",
+                "outdir": str(base),
+            },
+        )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    first_outdir = Path(first_response.json()["outdir"])
+    second_outdir = Path(second_response.json()["outdir"])
+
+    assert first_outdir != second_outdir
+    assert first_outdir.parent == second_outdir.parent
+    assert first_outdir.exists()
+    assert second_outdir.exists()
+    assert (first_outdir / "meeting_live.jsonl").exists()
+    assert (second_outdir / "meeting_live.jsonl").exists()
+    assert (first_outdir / "meeting_result.json").exists()
+    assert (second_outdir / "meeting_result.json").exists()
+
+    with app_module._processes_lock:
+        recorded_outdirs = {info["outdir"] for info in app_module._processes.values()}
+
+    assert recorded_outdirs == {str(first_outdir), str(second_outdir)}
