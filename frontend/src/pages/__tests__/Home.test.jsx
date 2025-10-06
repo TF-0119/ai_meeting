@@ -45,7 +45,6 @@ describe("Home", () => {
       form: {
         topic: "Preset Topic",
         precision: "6",
-        rounds: "2",
       },
       participants: presetParticipants,
     });
@@ -73,6 +72,7 @@ describe("Home", () => {
 
     const payload = startMeetingMock.mock.calls[0][0];
     expect(payload.agents).toBe('"Leader=Lead discussion" "Recorder=Take notes"');
+    expect(payload.rounds).toBeUndefined();
 
     unmount();
   });
