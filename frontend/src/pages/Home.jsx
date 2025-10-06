@@ -36,7 +36,6 @@ export default function Home() {
     {
       topic: "",
       precision: "5",
-      rounds: "4",
       backend: "ollama",
       model: "",
       openaiKeyRequired: false,
@@ -102,7 +101,6 @@ export default function Home() {
         const fields = [
           "topic",
           "precision",
-          "rounds",
           "backend",
           "model",
           "phaseTurnLimit",
@@ -161,9 +159,7 @@ export default function Home() {
         throw new Error("テーマを入力してください。");
       }
       const precisionValueRaw = Number(formState.precision);
-      const roundsValueRaw = Number(formState.rounds);
       const precisionValue = Number.isFinite(precisionValueRaw) ? precisionValueRaw : undefined;
-      const roundsValue = Number.isFinite(roundsValueRaw) ? roundsValueRaw : undefined;
       const finalAgentsValue = buildAgentsString(participants);
       if (!finalAgentsValue) {
         throw new Error("参加者を1人以上設定してください。");
@@ -218,7 +214,6 @@ export default function Home() {
       const payload = {
         topic: trimmedTopic,
         precision: precisionValue,
-        rounds: roundsValue,
         agents: finalAgentsValue,
         backend: backendTrimmed || undefined,
       };
@@ -278,7 +273,6 @@ export default function Home() {
       const params = new URLSearchParams({
         topic: trimmedTopic,
         precision: String(precisionValue ?? 5),
-        rounds: String(roundsValue ?? 4),
         agents: finalAgentsValue,
       }).toString();
       const encodedMeetingId = encodeURIComponent(meetingId);
@@ -316,21 +310,45 @@ export default function Home() {
               <span className="slider-value">{formState.precision}</span>
             </div>
           </label>
-          <label className="label">
-            ラウンド数
-            <div className="slider-control">
+          <div className="phase-settings">
+            <label className="label">
+              フェーズターン上限
               <input
-                className="range-input"
-                type="range"
-                min={1}
-                max={12}
-                step={1}
-                value={formState.rounds}
-                onChange={(e) => dispatch({ type: "update", field: "rounds", value: e.target.value })}
+                className="input"
+                value={formState.phaseTurnLimit}
+                onChange={(e) => dispatch({ type: "update", field: "phaseTurnLimit", value: e.target.value })}
+                placeholder="例: discussion=2 resolution=1"
               />
-              <span className="slider-value">{formState.rounds}</span>
-            </div>
-          </label>
+              <div className="hint">
+                空白またはカンマで区切って複数指定できます。数値のみの場合は全フェーズ共通の上限になります。
+              </div>
+            </label>
+
+            <label className="label">
+              フェーズ数の上限
+              <div className="slider-control">
+                <input
+                  className="range-input"
+                  type="range"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={resolvedMaxPhasesValue}
+                  onChange={(e) => dispatch({ type: "update", field: "maxPhases", value: e.target.value })}
+                />
+                <span className="slider-value">{formState.maxPhases || "未設定"}</span>
+                <button
+                  type="button"
+                  className="slider-reset"
+                  onClick={() => dispatch({ type: "update", field: "maxPhases", value: "" })}
+                  disabled={formState.maxPhases === ""}
+                >
+                  クリア
+                </button>
+              </div>
+              <div className="hint">1〜10 の範囲で指定できます。空欄にすると自動判定に任せます。</div>
+            </label>
+          </div>
         </div>
 
         <div className="label participant-section">
@@ -401,44 +419,6 @@ export default function Home() {
           <summary className="advanced-summary">高度な設定</summary>
           <div className="advanced-content">
             <div className="advanced-grid">
-              <label className="label">
-                フェーズターン上限
-                <input
-                  className="input"
-                  value={formState.phaseTurnLimit}
-                  onChange={(e) => dispatch({ type: "update", field: "phaseTurnLimit", value: e.target.value })}
-                  placeholder="例: discussion=2 resolution=1"
-                />
-                <div className="hint">
-                  空白またはカンマで区切って複数指定できます。数値のみの場合は全フェーズ共通の上限になります。
-                </div>
-              </label>
-
-              <label className="label">
-                フェーズ数の上限
-                <div className="slider-control">
-                  <input
-                    className="range-input"
-                    type="range"
-                    min={1}
-                    max={10}
-                    step={1}
-                    value={resolvedMaxPhasesValue}
-                    onChange={(e) => dispatch({ type: "update", field: "maxPhases", value: e.target.value })}
-                  />
-                  <span className="slider-value">{formState.maxPhases || "未設定"}</span>
-                  <button
-                    type="button"
-                    className="slider-reset"
-                    onClick={() => dispatch({ type: "update", field: "maxPhases", value: "" })}
-                    disabled={formState.maxPhases === ""}
-                  >
-                    クリア
-                  </button>
-                </div>
-                <div className="hint">1〜10 の範囲で指定できます。空欄にすると自動判定に任せます。</div>
-              </label>
-
               <div className="label advanced-chat-section">
                 <div className="advanced-chat-title">短文チャットモード</div>
                 <label className="advanced-chat-toggle">
