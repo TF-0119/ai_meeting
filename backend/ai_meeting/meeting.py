@@ -227,6 +227,8 @@ class Meeting:
         self._shock_engine = ShockEngine(self.cfg) if self.cfg.shock != "off" else None
         self._shock_hint: Optional[str] = None
         self._shock_ttl: int = 0
+        self._shock_baseline: Dict[str, float] = {}
+        self._shock_adjustments: Dict[str, float] = {}
         # Step7: KPIフィードバック
         self._ctrl = KPIFeedback(self.cfg)
         self._ctrl_hint: Optional[str] = None
@@ -331,11 +333,77 @@ class Meeting:
         """フェーズ切り替え時にショック/KPI制御をリセットする。"""
 
         if self._shock_engine:
-            self._shock_hint = None
             self._shock_ttl = 0
+            self._clear_shock_fluctuation()
         self._ctrl_hint = None
         self._ctrl_ttl = 0
         self._ctrl.reset()
+
+    def _apply_shock_fluctuation(self, mode: str) -> None:
+        """ショック発火時にTTLと揺らぎ調整を適用する。"""
+
+        ttl_raw = getattr(self.cfg, "shock_ttl", 1)
+        try:
+            ttl_value = int(ttl_raw)
+        except (TypeError, ValueError):
+            ttl_value = 1
+        self._shock_ttl = max(1, ttl_value)
+
+        if not self._shock_baseline:
+            self._shock_baseline = {
+                "temperature": self.temperature,
+                "select_temp": self.cfg.select_temp,
+                "sim_penalty": self.cfg.sim_penalty,
+                "cooldown": self.cfg.cooldown,
+            }
+
+        baseline = self._shock_baseline
+        adjustments: Dict[str, float] = {}
+
+        if mode == "explore":
+            deltas = {
+                "temperature": 0.2,
+                "select_temp": 0.2,
+                "sim_penalty": -0.1,
+                "cooldown": -0.05,
+            }
+        elif mode == "exploit":
+            deltas = {
+                "temperature": -0.2,
+                "select_temp": -0.2,
+                "sim_penalty": 0.1,
+                "cooldown": 0.05,
+            }
+        else:
+            deltas = {}
+
+        def _assign(param: str, delta: float, min_value: float, max_value: float) -> None:
+            base = baseline.get(param)
+            if base is None:
+                return
+            new_value = clamp(base + delta, min_value, max_value)
+            adjustments[param] = new_value - base
+            if param == "temperature":
+                self.temperature = new_value
+            elif param == "select_temp":
+                self.cfg.select_temp = new_value
+            elif param == "sim_penalty":
+                self.cfg.sim_penalty = new_value
+            elif param == "cooldown":
+                self.cfg.cooldown = new_value
+
+        if deltas:
+            bounds = {
+                "temperature": (0.2, 1.5),
+                "select_temp": (0.7, 1.5) if mode == "explore" else (0.5, 1.5),
+                "sim_penalty": (0.0, 0.6),
+                "cooldown": (0.0, 0.35),
+            }
+            for key, delta in deltas.items():
+                low, high = bounds[key]
+                _assign(key, delta, low, high)
+        
+        self._shock_adjustments = adjustments
 
     def _activate_shock(
         self,
@@ -350,15 +418,7 @@ class Meeting:
             return
 
         mode = self._shock_engine.mode
-        self._shock_ttl = max(1, int(getattr(self.cfg, "shock_ttl", 1)))
-        if mode == "explore":
-            self.cfg.select_temp = clamp(self.cfg.select_temp + 0.2, 0.7, 1.5)
-            self.cfg.sim_penalty = clamp(self.cfg.sim_penalty - 0.1, 0.0, 0.6)
-            self.cfg.cooldown = clamp(self.cfg.cooldown - 0.05, 0.0, 0.35)
-        elif mode == "exploit":
-            self.cfg.select_temp = clamp(self.cfg.select_temp - 0.2, 0.5, 1.5)
-            self.cfg.sim_penalty = clamp(self.cfg.sim_penalty + 0.1, 0.0, 0.6)
-            self.cfg.cooldown = clamp(self.cfg.cooldown + 0.05, 0.0, 0.35)
+        self._apply_shock_fluctuation(mode)
 
         if event is not None:
             event.shock_used = mode
@@ -371,7 +431,24 @@ class Meeting:
         }
         if metrics:
             record["metrics"] = dict(metrics)
+        if self._shock_adjustments:
+            record["adjustments"] = dict(self._shock_adjustments)
+        if self._shock_baseline:
+            record["baseline"] = dict(self._shock_baseline)
         self.logger.append_control(record)
+
+    def _clear_shock_fluctuation(self) -> None:
+        """ショック適用前のベースラインへ戻し、揺らぎ状態をリセットする。"""
+
+        if self._shock_baseline:
+            self.temperature = self._shock_baseline.get("temperature", self.temperature)
+            self.cfg.select_temp = self._shock_baseline.get("select_temp", self.cfg.select_temp)
+            self.cfg.sim_penalty = self._shock_baseline.get("sim_penalty", self.cfg.sim_penalty)
+            self.cfg.cooldown = self._shock_baseline.get("cooldown", self.cfg.cooldown)
+        self._shock_baseline = {}
+        self._shock_adjustments = {}
+        self._shock_hint = None
+        self._shock_ttl = 0
 
     def _handle_phase_event(self, event: PhaseEvent) -> None:
         """監視AIのフェーズイベントを処理する。"""
@@ -1462,7 +1539,7 @@ class Meeting:
             if getattr(self, "_shock_ttl", 0) > 0:
                 self._shock_ttl -= 1
                 if self._shock_ttl == 0:
-                    self._shock_hint = None
+                    self._clear_shock_fluctuation()
             # Step7: KPIフィードバック（直近ウィンドウ）
             try:
                 fb = self._ctrl.assess(self.history, self._unresolved_history)
