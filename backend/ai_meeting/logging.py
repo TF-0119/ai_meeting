@@ -162,7 +162,7 @@ class LiveLogWriter:
                     f.flush()
             else:
                 with self.md.open("a", encoding="utf-8", newline="\n") as f:
-                    f.write(f"### Round {round_idx} 要約\n\n{text}\n\n")
+                    f.write(f"### Round {round_id} 要約\n\n{text}\n\n")
                     f.flush()
         record = self._create_record(
             "summary",
