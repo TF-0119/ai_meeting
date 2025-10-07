@@ -337,6 +337,42 @@ class Meeting:
         self._ctrl_ttl = 0
         self._ctrl.reset()
 
+    def _activate_shock(
+        self,
+        metrics: Optional[Dict[str, Any]],
+        reason: str,
+        *,
+        event: Optional[PhaseEvent] = None,
+    ) -> None:
+        """ショック発火時にTTLと揺らぎパラメータを調整する。"""
+
+        if not self._shock_engine:
+            return
+
+        mode = self._shock_engine.mode
+        self._shock_ttl = max(1, int(getattr(self.cfg, "shock_ttl", 1)))
+        if mode == "explore":
+            self.cfg.select_temp = clamp(self.cfg.select_temp + 0.2, 0.7, 1.5)
+            self.cfg.sim_penalty = clamp(self.cfg.sim_penalty - 0.1, 0.0, 0.6)
+            self.cfg.cooldown = clamp(self.cfg.cooldown - 0.05, 0.0, 0.35)
+        elif mode == "exploit":
+            self.cfg.select_temp = clamp(self.cfg.select_temp - 0.2, 0.5, 1.5)
+            self.cfg.sim_penalty = clamp(self.cfg.sim_penalty + 0.1, 0.0, 0.6)
+            self.cfg.cooldown = clamp(self.cfg.cooldown + 0.05, 0.0, 0.35)
+
+        if event is not None:
+            event.shock_used = mode
+
+        record: Dict[str, Any] = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "type": "shock_activation",
+            "mode": mode,
+            "reason": reason,
+        }
+        if metrics:
+            record["metrics"] = dict(metrics)
+        self.logger.append_control(record)
+
     def _handle_phase_event(self, event: PhaseEvent) -> None:
         """監視AIのフェーズイベントを処理する。"""
 
@@ -356,15 +392,8 @@ class Meeting:
             if state:
                 state.status = "confirmed"
             if self._shock_engine:
-                if self._shock_engine.mode == "explore":
-                    self.cfg.select_temp = clamp(self.cfg.select_temp + 0.2, 0.7, 1.5)
-                    self.cfg.sim_penalty = clamp(self.cfg.sim_penalty - 0.1, 0.0, 0.6)
-                    self.cfg.cooldown = clamp(self.cfg.cooldown - 0.05, 0.0, 0.35)
-                elif self._shock_engine.mode == "exploit":
-                    self.cfg.select_temp = clamp(self.cfg.select_temp - 0.2, 0.5, 1.5)
-                    self.cfg.sim_penalty = clamp(self.cfg.sim_penalty + 0.1, 0.0, 0.6)
-                    self.cfg.cooldown = clamp(self.cfg.cooldown + 0.05, 0.0, 0.35)
-                event.shock_used = self._shock_engine.mode
+                reason = f"phase_confirm:{event.reason or 'unspecified'}"
+                self._activate_shock(metrics=None, reason=reason, event=event)
             self.logger.append_phase(self._phase_payload(event, state))
             return
         if event.status == "closed":
@@ -1443,6 +1472,12 @@ class Meeting:
                     if isinstance(raw_metrics, dict):
                         metrics_payload = dict(raw_metrics)
                 self._latest_kpi_metrics = metrics_payload
+                trigger_shock = bool(isinstance(fb, dict) and fb.get("trigger_shock"))
+                if trigger_shock and self._shock_engine:
+                    shock_reason = "kpi_trigger"
+                    if isinstance(fb, dict):
+                        shock_reason = fb.get("shock_reason") or shock_reason
+                    self._activate_shock(metrics_payload or None, shock_reason)
                 if fb and (self.cfg.kpi_auto_prompt or self.cfg.kpi_auto_tune):
                     rec = {"ts": datetime.now().isoformat(timespec="seconds"), "type": "kpi_control"}
                     rec.update(fb)
