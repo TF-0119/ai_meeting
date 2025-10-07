@@ -139,8 +139,16 @@ class MeetingConfig(BaseModel):
 
         # phase_turn_limit が未指定または0以下ならエージェント数から自動導出
         if self.phase_turn_limit in (None, 0):
-            auto_limit = len(self.agents)
-            self.phase_turn_limit = auto_limit if auto_limit > 0 else None
+            agent_count = len(self.agents)
+            if agent_count > 0:
+                # 既定では「各参加者が最低2回ずつ話せること」と
+                # フェーズ監視で利用するウィンドウ幅(phase_window)の
+                # いずれも満たすようにターン上限を自動導出する。
+                baseline = agent_count * 2
+                minimum = max(6, self.phase_window)
+                self.phase_turn_limit = max(baseline, minimum)
+            else:
+                self.phase_turn_limit = None
         elif isinstance(self.phase_turn_limit, int) and self.phase_turn_limit < 0:
             self.phase_turn_limit = None
 
