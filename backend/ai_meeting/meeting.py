@@ -1491,71 +1491,137 @@ class Meeting:
         self._reset_phase_controls()
         self.logger.append_phase(self._phase_payload(event, state))
 
-        pending_text = "- " + "\n- ".join(sorted(self._pending.items))
-        for agent in order:
-            extra = (
-                f"\n\n【残課題（要解消）】\n{pending_text}\n\n"
-                f"あなたの視点で、上記の残課題を具体的に解消してください。必ず日本語で、実行可能な手順・責任分担・期限を含めてください。"
-            )
-            req = self._agent_prompt(agent, last_summary)
-            req.messages.append({"role": "user", "content": extra})
-            content = self.backend.generate(req)
-            content = self._enforce_chat_constraints(content)
-            if self.critique_passes > 0:
-                content = self._critic_pass(content)
-            self.history.append(Turn(speaker=agent.name, content=content))
-            safe_console_print(f"{agent.name}:\n{content}\n")
+        agent_count = max(1, len(order))
+        turn_limit = state.turn_limit
+        if turn_limit is not None:
+            max_rounds = max(1, math.ceil(turn_limit / agent_count))
+        else:
+            max_rounds = 3
 
-            phase_turn = state.turn_count + 1
-            round_idx = self._phase_round_index(state, phase_turn)
-            self.logger.append_turn(
-                round_idx,
-                len(self.history),
-                agent.name,
-                content,
-                phase_id=state.id,
-                phase_turn=phase_turn,
-                phase_kind=state.kind,
-                phase_base=state.start_turn - 1,
-            )
-            summary_payload = self._summarize_round(self.history[-1])
-            last_summary = self._dedupe_bullets(summary_payload.get("summary", ""))
-            summary_payload["summary"] = last_summary
-            self._record_agent_memory(
-                [ag.name for ag in self.cfg.agents],
-                summary_payload,
-                speaker_name=agent.name,
-            )
-            self._conversation_summary(
-                new_turn=self.history[-1],
-                round_summary=last_summary or None,
-            )
-            self.logger.append_summary(
-                round_idx,
-                last_summary,
-                phase_id=state.id,
-                phase_turn=phase_turn,
-                phase_kind=state.kind,
-                phase_base=state.start_turn - 1,
-            )
-            self._log_summary_probe(
-                turn=self.history[-1],
-                round_idx=round_idx,
-                phase_id=state.id,
-                phase_turn=phase_turn,
-                phase_kind=state.kind,
-                phase_base=state.start_turn - 1,
-                payload=summary_payload,
-            )
-            unresolved_count = len(self._pending.items)
-            self._unresolved_history.append(unresolved_count)
-            if len(self._unresolved_history) > max(4, self.cfg.phase_window):
-                self._unresolved_history = self._unresolved_history[-self.cfg.phase_window :]
-            state.register_turn(len(self.history), unresolved_count)
-            self._last_spoke[agent.name] = global_turn
-            global_turn += 1
+        resolved = False
+        stalled = False
+        limit_hit = False
+        round_index = 0
 
-        self._pending.clear()
+        for idx in range(1, max_rounds + 1):
+            round_index = idx
+            if not self._pending.items:
+                resolved = True
+                break
+
+            round_changed = False
+
+            for agent in order:
+                if turn_limit is not None and state.turn_count >= turn_limit:
+                    limit_hit = True
+                    break
+                if not self._pending.items:
+                    resolved = True
+                    break
+
+                pending_text = "- " + "\n- ".join(sorted(self._pending.items))
+                extra = (
+                    f"\n\n【残課題（要解消）】\n{pending_text}\n\n"
+                    f"あなたの視点で、上記の残課題を具体的に解消してください。必ず日本語で、実行可能な手順・責任分担・期限を含めてください。"
+                )
+                req = self._agent_prompt(agent, last_summary)
+                req.messages.append({"role": "user", "content": extra})
+                content = self.backend.generate(req)
+                content = self._enforce_chat_constraints(content)
+                if self.critique_passes > 0:
+                    content = self._critic_pass(content)
+                self.history.append(Turn(speaker=agent.name, content=content))
+                safe_console_print(f"{agent.name}:\n{content}\n")
+
+                phase_turn = state.turn_count + 1
+                round_idx = self._phase_round_index(state, phase_turn)
+                self.logger.append_turn(
+                    round_idx,
+                    len(self.history),
+                    agent.name,
+                    content,
+                    phase_id=state.id,
+                    phase_turn=phase_turn,
+                    phase_kind=state.kind,
+                    phase_base=state.start_turn - 1,
+                )
+                summary_payload = self._summarize_round(self.history[-1])
+                last_summary = self._dedupe_bullets(summary_payload.get("summary", ""))
+                summary_payload["summary"] = last_summary
+                self._record_agent_memory(
+                    [ag.name for ag in self.cfg.agents],
+                    summary_payload,
+                    speaker_name=agent.name,
+                )
+                self._conversation_summary(
+                    new_turn=self.history[-1],
+                    round_summary=last_summary or None,
+                )
+                self.logger.append_summary(
+                    round_idx,
+                    last_summary,
+                    phase_id=state.id,
+                    phase_turn=phase_turn,
+                    phase_kind=state.kind,
+                    phase_base=state.start_turn - 1,
+                )
+                self._log_summary_probe(
+                    turn=self.history[-1],
+                    round_idx=round_idx,
+                    phase_id=state.id,
+                    phase_turn=phase_turn,
+                    phase_kind=state.kind,
+                    phase_base=state.start_turn - 1,
+                    payload=summary_payload,
+                )
+
+                previous_pending = set(self._pending.items)
+                self._pending.add_from_text(last_summary)
+                extracted_tracker = PendingTracker()
+                extracted_tracker.add_from_text(last_summary)
+                extracted_items = set(extracted_tracker.items)
+                resolved_items = previous_pending - extracted_items
+                new_items = extracted_items - previous_pending
+                if resolved_items or new_items:
+                    round_changed = True
+                self._pending.items = extracted_items
+
+                unresolved_count = len(self._pending.items)
+                self._unresolved_history.append(unresolved_count)
+                if len(self._unresolved_history) > max(4, self.cfg.phase_window):
+                    self._unresolved_history = self._unresolved_history[-self.cfg.phase_window :]
+                state.register_turn(len(self.history), unresolved_count)
+                self._last_spoke[agent.name] = global_turn
+                global_turn += 1
+
+                if not self._pending.items:
+                    resolved = True
+                    break
+
+            if resolved or limit_hit:
+                break
+
+            if not round_changed:
+                stalled = True
+                break
+
+        if not resolved and not stalled and not limit_hit and round_index >= max_rounds:
+            limit_hit = True
+
+        closing_summary = "残課題消化フェーズ終了"
+        if resolved:
+            safe_console_print("残課題はすべて解消されました。")
+            self._pending.clear()
+            closing_summary += "（全課題解消）"
+        elif stalled:
+            safe_console_print("残課題の新規追加が止まったため、フェーズを終了します。")
+            closing_summary += "（新規追加なし）"
+        elif limit_hit:
+            safe_console_print(
+                f"残課題が未解消のままラウンド上限（最大{max_rounds}ラウンド）に到達しました。"
+            )
+            closing_summary += "（ラウンド上限到達）"
+
         self._unresolved_history.append(len(self._pending.items))
         if len(self._unresolved_history) > max(4, self.cfg.phase_window):
             self._unresolved_history = self._unresolved_history[-self.cfg.phase_window :]
@@ -1566,7 +1632,7 @@ class Meeting:
             end_turn=len(self.history),
             status="closed",
             confidence=1.0,
-            summary="残課題消化フェーズ終了",
+            summary=closing_summary,
             kind=state.kind,
         )
         closed_state = self._end_phase(closing_event)
