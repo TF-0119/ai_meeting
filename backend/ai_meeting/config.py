@@ -64,7 +64,7 @@ class MeetingConfig(BaseModel):
     chat_context_summary: bool = True  # サマリーをチャット文脈に注入するか
     # --- 以降のステップ用プレースホルダ（Step 0では未使用） ---
     equilibrium: bool = False  # 均衡AI（メタ評価）
-    monitor: bool = False  # 監視AI（フェーズ検知）
+    monitor: bool = True  # 監視AI（フェーズ検知）
     shock: Literal["off", "random", "explore", "exploit"] = "off"  # ショック注入モード
     shock_ttl: int = 2  # ショックを維持するターン数（フェーズ確定後の有効ターン）
     # --- Step 1: UI最小化（台本感を消す表示） ---
