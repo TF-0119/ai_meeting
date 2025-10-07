@@ -183,6 +183,27 @@ function normalizeFilePath(path, meetingId) {
   return `/logs/${meetingId}/${path}`;
 }
 
+export async function stopMeeting(meetingId) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort(new DOMException("Request timed out", "AbortError"));
+  }, 15000);
+
+  try {
+    const res = await fetch(`/api/meetings/${encodeURIComponent(meetingId)}/stop`, {
+      method: "POST",
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      const reason = txt.trim();
+      throw new Error(`stop meeting failed: ${res.status}${reason ? ` ${reason}` : ""}`);
+    }
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 export async function startMeeting(payload) {
   const res = await fetch("/api/meetings", {
     method: "POST",

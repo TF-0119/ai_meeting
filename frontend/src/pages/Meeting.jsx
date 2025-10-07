@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { getLiveSnapshot } from "@/services/api";
+import { getLiveSnapshot, stopMeeting } from "@/services/api";
 
 export default function Meeting() {
   const { id: meetingId } = useParams();      // ← URLの :id が “logs のフォルダ名” と一致している必要あり
@@ -13,6 +13,7 @@ export default function Meeting() {
   const [kpi, setKpi] = useState(null);
   const [progress, setProgress] = useState(null);
   const [autoCompleted, setAutoCompleted] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
   const listRef = useRef(null);
 
   // ポーリング：5秒ごとに meeting_live.jsonl を読む
@@ -106,6 +107,23 @@ export default function Meeting() {
     nav(`/result/${encodedMeetingId}`);
   };
 
+  const handleStop = async () => {
+    if (isStopping) return;
+    setIsStopping(true);
+    try {
+      await stopMeeting(meetingId);
+    } catch (err) {
+      setIsStopping(false);
+      const message = err instanceof Error && err.message
+        ? err.message
+        : "会議の中止に失敗しました。";
+      window.alert(message);
+      return;
+    }
+    setIsStopping(false);
+    nav("/");
+  };
+
   return (
     <section className="grid-2">
       <div className="card">
@@ -126,7 +144,7 @@ export default function Meeting() {
         </div>
 
         <div className="actions">
-          <button className="btn ghost" onClick={() => nav("/")}>中止して戻る</button>
+          <button className="btn ghost" onClick={handleStop} disabled={isStopping}>中止して戻る</button>
           <button className="btn" onClick={toResult} disabled={!resultReady}>結果へ</button>
         </div>
         {!resultReady && (
