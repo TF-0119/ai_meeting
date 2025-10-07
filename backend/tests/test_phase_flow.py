@@ -51,6 +51,30 @@ def test_meeting_result_includes_phase_timeline(tmp_path: Path, monkeypatch, pen
         assert "unresolved_counts" in phase
 
 
+def test_meeting_opens_additional_phases_until_max(tmp_path: Path, monkeypatch) -> None:
+    """max_phases を指定した場合にターン上限到達後も次フェーズへ移行する。"""
+
+    monkeypatch.setenv("AI_MEETING_TEST_MODE", "deterministic")
+    outdir = tmp_path / "multi_phase"
+    agents = build_agents(["Alice", "Bob"])
+    cfg = MeetingConfig(
+        topic="フェーズ自動継続テスト",
+        precision=5,
+        agents=agents,
+        phase_turn_limit={"discussion": 2},
+        max_phases=2,
+        resolve_phase=False,
+        outdir=str(outdir),
+    )
+    meeting = Meeting(cfg)
+    meeting.run()
+
+    assert len(meeting.history) == 4
+    closed_phases = [p for p in meeting._phases if p.kind == "discussion"]
+    assert len(closed_phases) == 2
+    assert all(p.turn_count == 2 for p in closed_phases)
+
+
 def _patch_summaries(monkeypatch, texts):
     sequence = iter(texts)
 
