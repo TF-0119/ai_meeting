@@ -5,7 +5,7 @@ import random
 import re
 import typing
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from .config import MeetingConfig, Turn
 
@@ -250,40 +250,120 @@ class KPIFeedback:
 
 
 class ShockEngine:
-    """会議を活性化するショックヒント生成クラス。"""
+    """会議を活性化するショック揺らぎを算出するクラス。"""
 
     def __init__(self, cfg: MeetingConfig):
+        self.cfg = cfg
         self.mode = cfg.shock
+        self._rng = random.Random()
 
-    def generate(self, ctx: Dict) -> Tuple[str, str]:
-        topic = ctx.get("topic", "")
-        reason = ctx.get("reason", "")
-        summ = ctx.get("summary", "")
-        if self.mode == "explore":
-            hint = self._hint_explore(topic, reason, summ)
-            note = "explore"
-        elif self.mode == "exploit":
-            hint = self._hint_exploit(topic, reason, summ)
-            note = "exploit"
-        else:
-            hint = self._hint_random(topic, reason, summ)
-            note = "random"
-        return hint, note
+    def generate(self, ctx: Dict[str, typing.Any]) -> Dict[str, float]:
+        """現在モードに応じた揺らぎ量を返す。
 
-    def _hint_random(self, topic, reason, summ) -> str:
-        seeds = [
-            "制約を1つ極端に強めてみて（時間=120秒、道具=1点、人数=2名など）。",
-            "逆転発想：目的を真逆にすると何が生まれる？",
-            "異分野の比喩を1つだけ移植して（料理/ダンス/将棋/交通のいずれか）。",
-            "禁止語を1つ決めて、それを回避するルールを作って。",
-        ]
-        return random.choice(seeds)
+        `ctx` には KPI 指標などの情報を含め、モード別の強度調整に利用する。
+        戻り値は `{"temperature": +0.15}` のような「ベースラインに足し込む差分」。
+        """
 
-    def _hint_explore(self, topic, reason, summ) -> str:
-        return "現状の発想の前提を1つ外して、全く別系統の案を1つだけ提示して。実験可能性は低くても良い。"
+        metrics = ctx.get("metrics") or {}
+        mode = ctx.get("mode") or self.mode or "random"
+        if mode == "explore":
+            return self._mode_explore(metrics, ctx)
+        if mode == "exploit":
+            return self._mode_exploit(metrics, ctx)
+        return self._mode_random(metrics, ctx)
 
-    def _hint_exploit(self, topic, reason, summ) -> str:
-        return "直前の合意要素を3つ選び、数値・手順・失敗時対策を各1行で具体化して。抽象語は禁止。"
+    # --- 個別モード ---
+    def _mode_explore(
+        self, metrics: Dict[str, typing.Any], ctx: Dict[str, typing.Any]
+    ) -> Dict[str, float]:
+        """発散を促す揺らぎ量を計算する。"""
+
+        diversity = self._extract_number(metrics.get("diversity"))
+        severity = self._severity(
+            current=diversity,
+            threshold=getattr(self.cfg, "th_diversity_min", 0.55),
+            default=0.25,
+        )
+        if metrics.get("stall"):
+            severity = max(severity, 0.6)
+        adjustments = {
+            "temperature": round(0.30 * severity, 3),
+            "select_temp": round(0.40 * severity, 3),
+            "sim_penalty": round(-0.20 * severity, 3),
+            "cooldown": round(-0.12 * severity, 3),
+        }
+        return self._remove_near_zero(adjustments)
+
+    def _mode_exploit(
+        self, metrics: Dict[str, typing.Any], ctx: Dict[str, typing.Any]
+    ) -> Dict[str, float]:
+        """収束を促す揺らぎ量を計算する。"""
+
+        decision = self._extract_number(metrics.get("decision_density"))
+        severity = self._severity(
+            current=decision,
+            threshold=getattr(self.cfg, "th_decision_min", 0.40),
+            default=0.25,
+        )
+        if metrics.get("stall"):
+            severity = max(severity, 0.5)
+        adjustments = {
+            "temperature": round(-0.28 * severity, 3),
+            "select_temp": round(-0.35 * severity, 3),
+            "sim_penalty": round(0.18 * severity, 3),
+            "cooldown": round(0.15 * severity, 3),
+        }
+        return self._remove_near_zero(adjustments)
+
+    def _mode_random(
+        self, metrics: Dict[str, typing.Any], ctx: Dict[str, typing.Any]
+    ) -> Dict[str, float]:
+        """軽微なランダム揺らぎを返す。"""
+
+        span = ctx.get("random_span", 0.15)
+        def _rand(delta: float) -> float:
+            return round(self._rng.uniform(-delta, delta), 3)
+
+        adjustments = {
+            "temperature": _rand(span),
+            "select_temp": _rand(span),
+            "sim_penalty": _rand(span * 0.6),
+            "cooldown": _rand(span * 0.5),
+        }
+        return self._remove_near_zero(adjustments)
+
+    # --- 補助関数 ---
+    @staticmethod
+    def _extract_number(value: typing.Any) -> Optional[float]:
+        """数値に変換可能なら float を返す。"""
+
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _remove_near_zero(adjustments: Dict[str, float]) -> Dict[str, float]:
+        """丸め誤差でほぼゼロになった揺らぎを取り除く。"""
+
+        return {k: v for k, v in adjustments.items() if abs(v) >= 0.001}
+
+    @staticmethod
+    def _severity(
+        *, current: Optional[float], threshold: float, default: float
+    ) -> float:
+        """閾値との差分から 0.0-1.0 の強度を算出する。"""
+
+        default = max(0.0, min(1.0, default))
+        if current is None or threshold <= 0:
+            return default
+        gap = threshold - current
+        if gap <= 0:
+            return default
+        ratio = gap / threshold if threshold else 1.0
+        return max(default, min(1.0, ratio))
 
 
 class PendingTracker:

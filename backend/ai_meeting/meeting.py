@@ -339,50 +339,49 @@ class Meeting:
         self._ctrl_ttl = 0
         self._ctrl.reset()
 
-    def _apply_shock_fluctuation(self, mode: str) -> None:
-        """ショック発火時にTTLと揺らぎ調整を適用する。"""
+    def _ensure_shock_baseline(self) -> None:
+        """ショック調整前のベースラインをキャッシュする。"""
 
-        ttl_raw = getattr(self.cfg, "shock_ttl", 1)
-        try:
-            ttl_value = int(ttl_raw)
-        except (TypeError, ValueError):
-            ttl_value = 1
-        self._shock_ttl = max(1, ttl_value)
+        if self._shock_baseline:
+            return
+        self._shock_baseline = {
+            "temperature": self.temperature,
+            "select_temp": self.cfg.select_temp,
+            "sim_penalty": self.cfg.sim_penalty,
+            "cooldown": self.cfg.cooldown,
+        }
 
-        if not self._shock_baseline:
-            self._shock_baseline = {
-                "temperature": self.temperature,
-                "select_temp": self.cfg.select_temp,
-                "sim_penalty": self.cfg.sim_penalty,
-                "cooldown": self.cfg.cooldown,
-            }
+    def _apply_shock_adjustments(
+        self, mode: str, deltas: Dict[str, float]
+    ) -> Dict[str, float]:
+        """ショック発火時に揺らぎ差分をベースラインへ適用する。"""
 
+        if not deltas:
+            self._shock_adjustments = {}
+            return {}
+
+        self._ensure_shock_baseline()
         baseline = self._shock_baseline
         adjustments: Dict[str, float] = {}
 
-        if mode == "explore":
-            deltas = {
-                "temperature": 0.2,
-                "select_temp": 0.2,
-                "sim_penalty": -0.1,
-                "cooldown": -0.05,
-            }
-        elif mode == "exploit":
-            deltas = {
-                "temperature": -0.2,
-                "select_temp": -0.2,
-                "sim_penalty": 0.1,
-                "cooldown": 0.05,
-            }
-        else:
-            deltas = {}
+        bounds = {
+            "temperature": (0.2, 1.5),
+            "select_temp": (0.5, 1.5) if mode != "explore" else (0.7, 1.5),
+            "sim_penalty": (0.0, 0.6),
+            "cooldown": (0.0, 0.35),
+        }
 
-        def _assign(param: str, delta: float, min_value: float, max_value: float) -> None:
+        for param, delta in deltas.items():
             base = baseline.get(param)
-            if base is None:
-                return
-            new_value = clamp(base + delta, min_value, max_value)
-            adjustments[param] = new_value - base
+            limit = bounds.get(param)
+            if base is None or limit is None:
+                continue
+            low, high = limit
+            new_value = clamp(base + delta, low, high)
+            applied = round(new_value - base, 4)
+            if abs(applied) < 1e-6:
+                continue
+            adjustments[param] = applied
             if param == "temperature":
                 self.temperature = new_value
             elif param == "select_temp":
@@ -392,18 +391,8 @@ class Meeting:
             elif param == "cooldown":
                 self.cfg.cooldown = new_value
 
-        if deltas:
-            bounds = {
-                "temperature": (0.2, 1.5),
-                "select_temp": (0.7, 1.5) if mode == "explore" else (0.5, 1.5),
-                "sim_penalty": (0.0, 0.6),
-                "cooldown": (0.0, 0.35),
-            }
-            for key, delta in deltas.items():
-                low, high = bounds[key]
-                _assign(key, delta, low, high)
-        
         self._shock_adjustments = adjustments
+        return adjustments
 
     def _activate_shock(
         self,
@@ -417,8 +406,24 @@ class Meeting:
         if not self._shock_engine:
             return
 
+        ttl_raw = getattr(self.cfg, "shock_ttl", 1)
+        try:
+            ttl_value = int(ttl_raw)
+        except (TypeError, ValueError):
+            ttl_value = 1
+        self._shock_ttl = max(1, ttl_value)
+
         mode = self._shock_engine.mode
-        self._apply_shock_fluctuation(mode)
+        ctx: Dict[str, Any] = {
+            "mode": mode,
+            "reason": reason,
+            "metrics": metrics or {},
+        }
+        if event is not None:
+            ctx["phase_kind"] = event.kind
+            ctx["phase_status"] = event.status
+        deltas = self._shock_engine.generate(ctx)
+        adjustments = self._apply_shock_adjustments(mode, deltas)
 
         if event is not None:
             event.shock_used = mode
@@ -431,8 +436,10 @@ class Meeting:
         }
         if metrics:
             record["metrics"] = dict(metrics)
-        if self._shock_adjustments:
-            record["adjustments"] = dict(self._shock_adjustments)
+        if adjustments:
+            record["adjustments"] = dict(adjustments)
+        if deltas and any(k not in adjustments for k in deltas):
+            record["requested"] = dict(deltas)
         if self._shock_baseline:
             record["baseline"] = dict(self._shock_baseline)
         self.logger.append_control(record)
