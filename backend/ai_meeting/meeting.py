@@ -1356,8 +1356,38 @@ class Meeting:
             safe_console_print("Phase Turn Limit が設定されていないため、会議を開始せず終了します。")
             self.metrics.stop()
             return
-        while self._phase_state and not self._phase_state.is_completed():
+        while self._phase_state:
             current_phase = self._phase_state
+            if current_phase.is_completed():
+                closing_event = PhaseEvent(
+                    phase_id=current_phase.id,
+                    start_turn=current_phase.start_turn,
+                    end_turn=len(self.history),
+                    status="closed",
+                    confidence=1.0,
+                    summary="フェーズ終了（ターン上限）",
+                    kind=current_phase.kind,
+                )
+                closed_state = self._end_phase(closing_event)
+                self.logger.append_phase(self._phase_payload(closing_event, closed_state))
+                if self.cfg.max_phases is None:
+                    break
+                if len(self._phases) >= self.cfg.max_phases:
+                    break
+                next_event = PhaseEvent(
+                    phase_id=closed_state.id + 1,
+                    start_turn=len(self.history) + 1,
+                    end_turn=len(self.history),
+                    status="open",
+                    confidence=0.0,
+                    summary="",
+                    kind=current_phase.kind,
+                )
+                new_state = self._begin_phase(next_event)
+                self._reset_phase_controls()
+                self.logger.append_phase(self._phase_payload(next_event, new_state))
+                continue
+
             phase_turn = current_phase.turn_count + 1
             round_idx = self._phase_round_index(current_phase, phase_turn)
 
