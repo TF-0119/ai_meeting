@@ -315,11 +315,12 @@ def _build_cli_command(
         body.topic,
         "--precision",
         str(body.precision),
-        "--rounds",
-        str(body.rounds),
         "--agents",
         *agents,
     ]
+
+    if body.rounds is not None:
+        cmd_list.extend(["--rounds", str(body.rounds)])
 
     if selected_backend:
         cmd_list.extend(["--backend", selected_backend])
@@ -383,7 +384,7 @@ class StartMeetingIn(BaseModel):
 
     topic: str = Field(..., min_length=1)
     precision: int = Field(5, ge=1, le=10)
-    rounds: int = Field(4, ge=1, le=100)
+    rounds: Optional[int] = Field(default=None, ge=1, le=100)
     agents: str = Field(DEFAULT_AGENT_STRING)
     backend: str = Field("ollama")  # "ollama" or "openai" など
     outdir: Optional[str] = None    # 明示指定したい場合。未指定なら自動で logs/<ts>_<slug> を作る
