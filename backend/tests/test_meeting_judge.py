@@ -54,6 +54,9 @@ def _make_meeting(response: str, agent_names: Optional[List[str]] = None) -> Mee
     meeting.backend = _StubBackend(response)
     meeting._conversation_summary_points = []
     meeting._test_mode = False
+    meeting.logger = SimpleNamespace(
+        append_warning=lambda *args, **kwargs: None,
+    )
     return meeting
 
 
@@ -85,6 +88,38 @@ def test_judge_thoughts_normalizes_names_and_winner() -> None:
     assert result["winner"] == "Alice"
     assert pytest.approx(result["scores"]["Alice"]["score"], rel=1e-9) == 0.9
     assert "Bob" in result["scores"]
+
+
+def test_judge_thoughts_handles_non_numeric_scores() -> None:
+    """数値フィールドが文字列や非数値でも 0.0 にフォールバックする。"""
+
+    response = json.dumps(
+        {
+            "scores": {
+                "Alice": {
+                    "flow": "fast",
+                    "goal": "unknown",
+                    "quality": "NaN",
+                    "novelty": "?",
+                    "action": "-",
+                    "score": "bad",
+                }
+            }
+        },
+        ensure_ascii=False,
+    )
+    meeting = _make_meeting(response, ["Alice"])
+
+    flow_summary = meeting._conversation_summary()
+    result = meeting._judge_thoughts({"Alice": "案A"}, "", flow_summary)
+
+    alice_scores = result["scores"]["Alice"]
+    assert alice_scores["flow"] == 0.0
+    assert alice_scores["goal"] == 0.0
+    assert alice_scores["quality"] == 0.0
+    assert alice_scores["novelty"] == 0.0
+    assert alice_scores["action"] == 0.0
+    assert alice_scores["score"] == 0.0
 
 
 def test_judge_thoughts_fallback_uses_random_choice(monkeypatch: pytest.MonkeyPatch) -> None:
