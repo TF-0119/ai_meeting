@@ -204,13 +204,15 @@ class KPIFeedback:
         }
         hints: list[str] = []
         tune: Dict[str, typing.Any] = {}
-        if diversity < self.cfg.th_diversity_min:
+        low_diversity = diversity < self.cfg.th_diversity_min
+        low_decision = decision_density < self.cfg.th_decision_min
+        if low_diversity:
             if self.cfg.kpi_auto_tune:
                 tune["select_temp"] = ("inc", 0.20, 0.7, 1.5)
                 tune["sim_penalty"] = ("inc", 0.10, 0.15, 0.60)
             else:
                 hints.append("新しい観点を必ず1つだけ追加し、直前の発言にない要素を入れてください。")
-        if decision_density < self.cfg.th_decision_min:
+        if low_decision:
             if self.cfg.kpi_auto_tune:
                 tune["cooldown"] = ("inc", 0.05, 0.10, 0.35)
             else:
@@ -218,6 +220,10 @@ class KPIFeedback:
         if stall:
             hints.append("抽象を避け、数値・手順・失敗時対策を各1行で具体化してください。")
             tune["shock_mode"] = "exploit"
+
+        if low_diversity and low_decision:
+            actions["trigger_shock"] = True
+            actions["shock_reason"] = "diversity_decision_drop"
 
         if not hints and not tune:
             return actions
