@@ -62,6 +62,23 @@ def test_meeting_monitor_enabled_by_default(tmp_path, monkeypatch):
     assert meeting._monitor is not None
 
 
+def test_phase_turn_limit_auto_scales_with_agents():
+    """phase_turn_limit 未指定時に自動導出される上限値を検証する。"""
+
+    cfg = MeetingConfig(
+        topic="フェーズターン自動設定テスト",
+        precision=5,
+        agents=[
+            AgentConfig(name="Alice", system="あなたは会議参加者です。"),
+            AgentConfig(name="Bob", system="あなたは会議参加者です。"),
+            AgentConfig(name="Carol", system="あなたは会議参加者です。"),
+        ],
+        backend_name="ollama",
+    )
+
+    expected = max(len(cfg.agents) * 2, cfg.phase_window, 6)
+    assert cfg.get_phase_turn_limit() == expected
+
 def test_cli_monitor_flags(monkeypatch):
     """CLI の --monitor/--no-monitor フラグが既定値と上書きを適切に扱う。"""
 
