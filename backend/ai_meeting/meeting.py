@@ -730,17 +730,48 @@ class Meeting:
                 normalized_scores[canonical] = rec
 
         # 欠損を埋める＆scoreを正規化
+        def _safe_float(rec: object, key: str) -> float:
+            """LLM出力の数値フィールドを安全に取得するヘルパー。"""
+
+            if not isinstance(rec, dict):
+                self.logger.append_warning(
+                    "judge_scores_invalid_record",
+                    context={"field": key, "received_type": type(rec).__name__},
+                )
+                return 0.0
+
+            raw_value = rec.get(key)
+            if raw_value is None:
+                return 0.0
+
+            try:
+                value = float(raw_value)
+            except (TypeError, ValueError):
+                self.logger.append_warning(
+                    "judge_scores_non_numeric",
+                    context={"field": key, "received_type": type(raw_value).__name__},
+                )
+                return 0.0
+
+            if math.isnan(value):
+                self.logger.append_warning(
+                    "judge_scores_nan",
+                    context={"field": key},
+                )
+                return 0.0
+
+            return max(0.0, min(1.0, value))
+
         out_scores = {}
         for n in names:
             rec = normalized_scores.get(n, {})
-            sc = float(rec.get("score", 0.0)) if isinstance(rec, dict) else 0.0
             out_scores[n] = {
-                "flow": float(rec.get("flow", 0.0)) if isinstance(rec, dict) else 0.0,
-                "goal": float(rec.get("goal", 0.0)) if isinstance(rec, dict) else 0.0,
-                "quality": float(rec.get("quality", 0.0)) if isinstance(rec, dict) else 0.0,
-                "novelty": float(rec.get("novelty", 0.0)) if isinstance(rec, dict) else 0.0,
-                "action": float(rec.get("action", 0.0)) if isinstance(rec, dict) else 0.0,
-                "score": max(0.0, min(1.0, sc)),
+                "flow": _safe_float(rec, "flow"),
+                "goal": _safe_float(rec, "goal"),
+                "quality": _safe_float(rec, "quality"),
+                "novelty": _safe_float(rec, "novelty"),
+                "action": _safe_float(rec, "action"),
+                "score": _safe_float(rec, "score"),
                 "rationale": (rec.get("rationale") or "" if isinstance(rec, dict) else "")[:60],
             }
         win_raw = j.get("winner")
