@@ -59,7 +59,7 @@
 | `--summary-probe-log` | 要約プローブのターンごとの JSONL 出力。 | `False` | `summary_probe_enabled` と併用推奨。 |
 | `--summary-probe-filename` | 要約プローブ出力ファイル名。 | `summary_probe.json` | `summary_probe_enabled` 時のみ利用。 |
 | `--equilibrium` | 均衡 AI (メタ評価) を有効化。 | `False` | Step 0 では未使用。将来機能。 |
-| `--monitor` | フェーズ自動判定 AI。 | `False` | 背景処理のみ。UI では「実験的」ラベル。 |
+| `--monitor` / `--no-monitor` | フェーズ自動判定 AI。 | `True` | 既定で有効。`--no-monitor` で無効化。背景処理のみ。UI では「実験的」ラベル。 |
 
 ## 各設定項目の詳細
 

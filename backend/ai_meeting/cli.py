@@ -119,8 +119,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     # Step 4
     ap.add_argument(
         "--monitor",
+        dest="monitor",
         action="store_true",
+        default=None,
         help="監視AI（フェーズ自動判定）を有効化（裏方のみ）",
+    )
+    ap.add_argument(
+        "--no-monitor",
+        dest="monitor",
+        action="store_false",
+        help="監視AI（フェーズ自動判定）を無効化",
     )
     ap.add_argument("--phase-window", type=int, default=8)
     ap.add_argument("--phase-cohesion-min", type=float, default=0.70)
@@ -234,6 +242,9 @@ def build_meeting_config(args: argparse.Namespace) -> MeetingConfig:
 
     agent_memory_limit_default = MeetingConfig.model_fields["agent_memory_limit"].default
     agent_memory_window_default = MeetingConfig.model_fields["agent_memory_window"].default
+    monitor_default = MeetingConfig.model_fields["monitor"].default
+    monitor_arg = getattr(args, "monitor", None)
+    monitor_value = monitor_default if monitor_arg is None else bool(monitor_arg)
 
     cfg = MeetingConfig(
         topic=args.topic,
@@ -259,7 +270,7 @@ def build_meeting_config(args: argparse.Namespace) -> MeetingConfig:
         else agent_memory_window_default,
         outdir=getattr(args, "outdir", None),
         equilibrium=getattr(args, "equilibrium", False),
-        monitor=getattr(args, "monitor", False),
+        monitor=monitor_value,
         shock=getattr(args, "shock", "off"),
         shock_ttl=max(1, int(getattr(args, "shock_ttl", 2))),
         ui_minimal=getattr(args, "ui_minimal", True),
