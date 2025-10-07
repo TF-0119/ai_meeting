@@ -75,6 +75,7 @@ def test_start_meeting_cmd_uses_defaults(monkeypatch, tmp_path):
     assert "--backend" in store["cmd_list"]
     assert "--ollama-model" not in store["cmd_list"]
     assert "--openai-model" not in store["cmd_list"]
+    assert "--rounds" not in store["cmd_list"]
 
 
 def test_start_meeting_cmd_accepts_llm_overrides(monkeypatch, tmp_path):
@@ -167,6 +168,29 @@ def test_start_meeting_cmd_accepts_advanced_options(monkeypatch, tmp_path):
         index = cmd_list.index(flag)
         assert cmd_list[index + 1] == expected
     assert "--no-chat-mode" in cmd_list
+
+
+def test_start_meeting_cmd_accepts_rounds(monkeypatch, tmp_path):
+    store: dict = {}
+    _setup_popen(monkeypatch, store)
+    monkeypatch.setattr(app_module, "_processes", {})
+
+    with TestClient(app_module.app) as client:
+        response = client.post(
+            "/meetings",
+            json={
+                "topic": "ラウンド指定",
+                "agents": "Alice Bob",
+                "outdir": str(tmp_path / "rounds"),
+                "rounds": 7,
+            },
+        )
+
+    assert response.status_code == 200
+    cmd_list = store.get("cmd_list", [])
+    assert "--rounds" in cmd_list
+    rounds_index = cmd_list.index("--rounds")
+    assert cmd_list[rounds_index + 1] == "7"
 
 
 def test_start_meeting_rejects_empty_agent_name(monkeypatch, tmp_path):
