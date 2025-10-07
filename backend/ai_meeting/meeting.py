@@ -12,7 +12,7 @@ import traceback
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from .config import AgentConfig, MeetingConfig, Turn
 from .controllers import KPIFeedback, Monitor, PendingTracker, PhaseEvent, ShockEngine
@@ -240,6 +240,20 @@ class Meeting:
         else:
             self.metrics = MetricsLogger(self.logger.dir, interval=1.0)
         self.metrics.start()
+
+    def _collect_last_utterances(self) -> Dict[str, Optional[str]]:
+        """履歴から各エージェントの直近発言を逆順に抽出する。"""
+
+        last_utterances: Dict[str, Optional[str]] = {ag.name: None for ag in self.cfg.agents}
+        remaining: Set[str] = {ag.name for ag in self.cfg.agents}
+        for turn in reversed(self.history):
+            if turn.speaker not in remaining:
+                continue
+            last_utterances[turn.speaker] = turn.content
+            remaining.remove(turn.speaker)
+            if not remaining:
+                break
+        return last_utterances
 
     def _begin_phase(self, event: PhaseEvent) -> PhaseState:
         """フェーズを開始し、現在の状態として保持する。"""
@@ -1304,6 +1318,7 @@ class Meeting:
 
             global_turn += 1
 
+            last_utterances = self._collect_last_utterances()
             if self.equilibrium_enabled:
                 recent = self._recent_context(self.cfg.chat_window)
                 roster = "\n".join([f"- {a.name}: {a.system[:120]}" for a in self.cfg.agents])
@@ -1353,8 +1368,12 @@ class Meeting:
                         ago = global_turn - self._last_spoke[ag.name]
                         if 0 <= ago <= self.cfg.cooldown_span:
                             s -= self.cfg.cooldown
-                    if sim_tokens_recent:
-                        sim = self._similarity_tokens(self._token_set(content), sim_tokens_recent)
+                    agent_last = last_utterances.get(ag.name)
+                    if sim_tokens_recent and agent_last:
+                        sim = self._similarity_tokens(
+                            self._token_set(agent_last),
+                            sim_tokens_recent,
+                        )
                         s -= self.cfg.sim_penalty * sim
                     adj[ag.name] = s
                 top = sorted(adj.items(), key=lambda kv: kv[1], reverse=True)[: max(1, self.cfg.topk)]
