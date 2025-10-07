@@ -234,6 +234,7 @@ class Meeting:
 
         # メトリクスロガー開始
         self._last_spoke: Dict[str, int] = {}  # speaker_name -> last turn index (global)
+        self._latest_kpi_metrics: Dict[str, Any] = {}
         if self._test_mode:
             self.metrics = NullMetricsLogger(self.logger.dir)
         else:
@@ -795,8 +796,73 @@ class Meeting:
             result["raw_winner"] = raw_text
         return result
 
-    def _resolve_winner(self, verdict: Dict, previous_name: Optional[str]) -> str:
-        """直前の発言者を考慮しつつ最終的な勝者を決定する。"""
+    def _apply_score_modifiers(
+        self, scores: Dict[str, Dict[str, float]], global_turn: int
+    ) -> Dict[str, Dict[str, float]]:
+        """勝者決定前にスコアへクールダウン/KPI調整を適用する。"""
+
+        if not scores:
+            return scores
+
+        adjusted: Dict[str, Dict[str, float]] = {
+            name: dict(record) for name, record in scores.items()
+        }
+
+        def _to_float(value: Any) -> float:
+            try:
+                v = float(value)
+            except (TypeError, ValueError):
+                return 0.0
+            if math.isnan(v):
+                return 0.0
+            return v
+
+        cooldown = max(0.0, getattr(self.cfg, "cooldown", 0.0) or 0.0)
+        cooldown_span = max(0, getattr(self.cfg, "cooldown_span", 0) or 0)
+        relief_base = min(max(cooldown * 0.5, 0.0), 0.1) if cooldown > 0 else 0.05
+        metrics = getattr(self, "_latest_kpi_metrics", {}) or {}
+        diversity = metrics.get("diversity") if isinstance(metrics, dict) else None
+        decision_density = (
+            metrics.get("decision_density") if isinstance(metrics, dict) else None
+        )
+        diversity_threshold = 0.45
+        decision_threshold = 0.4
+
+        for name, record in adjusted.items():
+            score = _to_float(record.get("score"))
+            last_turn = self._last_spoke.get(name)
+            if cooldown > 0 and last_turn is not None:
+                ago = global_turn - last_turn
+                if 0 <= ago <= cooldown_span:
+                    decay = 1.0 if cooldown_span == 0 else 1.0 - (ago / (cooldown_span + 1))
+                    score -= cooldown * max(decay, 0.0)
+                elif ago > cooldown_span:
+                    bonus_scale = (ago - cooldown_span) / max(cooldown_span + 1, 1)
+                    score += relief_base * min(bonus_scale, 1.0)
+            elif cooldown > 0 and last_turn is None and global_turn > 0:
+                score += relief_base * 0.5
+
+            if isinstance(diversity, (int, float)) and diversity < diversity_threshold:
+                novelty = _to_float(record.get("novelty"))
+                if novelty > 0:
+                    gap = diversity_threshold - diversity
+                    novelty_norm = clamp(novelty, 0.0, 1.0)
+                    score += gap * ((0.5 * novelty_norm) - (0.2 * (1.0 - novelty_norm)))
+
+            if isinstance(decision_density, (int, float)) and decision_density < decision_threshold:
+                action = _to_float(record.get("action"))
+                if action > 0:
+                    gap = decision_threshold - decision_density
+                    score += 0.15 * gap * action
+
+            record["score"] = clamp(score, 0.0, 1.0)
+
+        return adjusted
+
+    def _resolve_winner(
+        self, verdict: Dict, previous_name: Optional[str], global_turn: int
+    ) -> str:
+        """直前の発言者やKPIに基づく補正を考慮しつつ勝者を決定する。"""
 
         agent_names = [agent.name for agent in self.cfg.agents]
         if not agent_names:
@@ -809,23 +875,28 @@ class Meeting:
             return requested
 
         raw_scores = verdict.get("scores") if isinstance(verdict, dict) else {}
-        scores: Dict[str, Dict[str, float]] = raw_scores if isinstance(raw_scores, dict) else {}
+        copied_scores: Dict[str, Dict[str, float]] = {}
+        if isinstance(raw_scores, dict):
+            for name, record in raw_scores.items():
+                if isinstance(record, dict):
+                    copied_scores[name] = dict(record)
+        scores = self._apply_score_modifiers(copied_scores, global_turn)
+        if isinstance(verdict, dict):
+            verdict["scores"] = scores
+
         candidates: List[Tuple[str, float]] = []
         for name in agent_names:
             if name == previous:
                 continue
-            score = 0.0
-            if isinstance(scores, dict):
-                record = scores.get(name)
-                if isinstance(record, dict):
-                    raw_score = record.get("score")
-                    try:
-                        score = float(raw_score) if raw_score is not None else 0.0
-                    except (TypeError, ValueError):
-                        score = 0.0
-                    else:
-                        if math.isnan(score):
-                            score = 0.0
+            record = scores.get(name, {}) if isinstance(scores, dict) else {}
+            raw_score = record.get("score") if isinstance(record, dict) else None
+            try:
+                score = float(raw_score) if raw_score is not None else 0.0
+            except (TypeError, ValueError):
+                score = 0.0
+            else:
+                if math.isnan(score):
+                    score = 0.0
             candidates.append((name, score))
 
         if not candidates:
@@ -1171,7 +1242,9 @@ class Meeting:
                 thoughts: Dict[str, str] = {ag.name: self._think(ag, last_summary) for ag in self.cfg.agents}
                 verdict = self._judge_thoughts(thoughts, last_summary, flow_summary)
                 previous_speaker = self.history[-1].speaker if self.history else None
-                winner_name = self._resolve_winner(verdict, previous_speaker)
+                winner_name = self._resolve_winner(
+                    verdict, previous_speaker, global_turn
+                )
                 verdict["resolved_winner"] = winner_name
                 winner = next((a for a in self.cfg.agents if a.name == winner_name), self.cfg.agents[0])
                 content = self._speak_from_thought(winner, thoughts.get(winner.name, ""))
@@ -1345,6 +1418,12 @@ class Meeting:
             # Step7: KPIフィードバック（直近ウィンドウ）
             try:
                 fb = self._ctrl.assess(self.history, self._unresolved_history)
+                metrics_payload: Dict[str, Any] = {}
+                if isinstance(fb, dict):
+                    raw_metrics = fb.get("metrics")
+                    if isinstance(raw_metrics, dict):
+                        metrics_payload = dict(raw_metrics)
+                self._latest_kpi_metrics = metrics_payload
                 if fb and (self.cfg.kpi_auto_prompt or self.cfg.kpi_auto_tune):
                     rec = {"ts": datetime.now().isoformat(timespec="seconds"), "type": "kpi_control"}
                     rec.update(fb)

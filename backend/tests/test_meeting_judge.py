@@ -49,6 +49,8 @@ def _make_meeting(response: str, agent_names: Optional[List[str]] = None) -> Mee
         think_judge_include_recent_summary=True,
         think_judge_include_flow_summary=True,
         agents=[SimpleNamespace(name=name, system="", style="") for name in agent_names],
+        cooldown=0.0,
+        cooldown_span=0,
     )
     meeting.history = []
     meeting.backend = _StubBackend(response)
@@ -57,6 +59,8 @@ def _make_meeting(response: str, agent_names: Optional[List[str]] = None) -> Mee
     meeting.logger = SimpleNamespace(
         append_warning=lambda *args, **kwargs: None,
     )
+    meeting._last_spoke = {}
+    meeting._latest_kpi_metrics = {}
     return meeting
 
 
@@ -163,7 +167,7 @@ def test_resolve_winner_switches_from_previous_speaker() -> None:
         },
     }
 
-    resolved = meeting._resolve_winner(verdict, "Alice")
+    resolved = meeting._resolve_winner(verdict, "Alice", 3)
 
     assert resolved == "Bob"
 
@@ -174,9 +178,48 @@ def test_resolve_winner_switches_even_without_scores() -> None:
     meeting = _make_meeting("{}", ["Alice", "Bob"])
     verdict = {"winner": "Alice", "scores": {}}
 
-    resolved = meeting._resolve_winner(verdict, "Alice")
+    resolved = meeting._resolve_winner(verdict, "Alice", 2)
 
     assert resolved == "Bob"
+
+
+def test_resolve_winner_penalizes_recent_speaker() -> None:
+    """直前に発言した参加者は cooldown により選ばれにくくなる。"""
+
+    meeting = _make_meeting("{}", ["Alice", "Bob"])
+    meeting.cfg.cooldown = 0.3
+    meeting.cfg.cooldown_span = 2
+    meeting._last_spoke = {"Alice": 9}
+
+    verdict = {
+        "scores": {
+            "Alice": {"score": 0.9},
+            "Bob": {"score": 0.85},
+        }
+    }
+
+    resolved = meeting._resolve_winner(verdict, None, 10)
+
+    assert resolved == "Bob"
+    assert verdict["scores"]["Alice"]["score"] < 0.9
+
+
+def test_resolve_winner_rewards_novelty_when_diversity_low() -> None:
+    """diversity が低い場合は novelty の高い案にボーナスが与えられる。"""
+
+    meeting = _make_meeting("{}", ["Alice", "Bob"])
+    meeting._latest_kpi_metrics = {"diversity": 0.2}
+    verdict = {
+        "scores": {
+            "Alice": {"score": 0.5, "novelty": 0.9, "action": 0.3},
+            "Bob": {"score": 0.6, "novelty": 0.2, "action": 0.7},
+        }
+    }
+
+    resolved = meeting._resolve_winner(verdict, None, 5)
+
+    assert resolved == "Alice"
+    assert verdict["scores"]["Alice"]["score"] > 0.5
 
 
 def test_judge_thoughts_prompt_includes_summaries() -> None:
