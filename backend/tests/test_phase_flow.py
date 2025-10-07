@@ -49,3 +49,81 @@ def test_meeting_result_includes_phase_timeline(tmp_path: Path, monkeypatch, pen
     for phase in phases:
         assert "turn_indices" in phase and isinstance(phase["turn_indices"], list)
         assert "unresolved_counts" in phase
+
+
+def _patch_summaries(monkeypatch, texts):
+    sequence = iter(texts)
+
+    def _fake(self, new_turn):  # type: ignore[override]
+        text = next(sequence, "")
+        return {"summary": text}
+
+    monkeypatch.setattr(Meeting, "_summarize_round", _fake)
+
+
+def test_resolution_phase_resolves_all_items(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AI_MEETING_TEST_MODE", "deterministic")
+    outdir = tmp_path / "resolution_success"
+    agents = build_agents(["Alice", "Bob"])
+    cfg = MeetingConfig(
+        topic="残課題多段解消テスト",
+        precision=5,
+        agents=agents,
+        phase_turn_limit={"resolution": 4},
+        resolve_phase=True,
+        outdir=str(outdir),
+    )
+    meeting = Meeting(cfg)
+    meeting._pending.items.update({"課題Aの担当調整", "課題Bの仕様確定"})  # type: ignore[attr-defined]
+
+    _patch_summaries(
+        monkeypatch,
+        [
+            "- 課題: 課題Bの仕様確定\n- 課題: 課題Cのリスク整理",
+            "- 課題: 課題Bの仕様確定",
+            "- 課題: 課題Bの仕様確定",
+            "全て解決済みです",
+        ],
+    )
+
+    last_summary, global_turn = meeting._run_resolution_phase(meeting.cfg.agents, "", 1)
+
+    assert last_summary == "全て解決済みです"
+    assert meeting._pending.items == set()
+    assert meeting._unresolved_history[-1] == 0
+    assert global_turn == 5
+    assert len(meeting.history) == 4
+    meeting.metrics.stop()
+
+
+def test_resolution_phase_retains_unresolved_when_stalled(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AI_MEETING_TEST_MODE", "deterministic")
+    outdir = tmp_path / "resolution_stall"
+    agents = build_agents(["Alice", "Bob"])
+    cfg = MeetingConfig(
+        topic="残課題停滞テスト",
+        precision=5,
+        agents=agents,
+        phase_turn_limit={"resolution": 2},
+        resolve_phase=True,
+        outdir=str(outdir),
+    )
+    meeting = Meeting(cfg)
+    meeting._pending.items.update({"課題Aの担当調整", "課題Bの仕様確定"})  # type: ignore[attr-defined]
+
+    _patch_summaries(
+        monkeypatch,
+        [
+            "- 課題: 課題Aの担当調整\n- 課題: 課題Bの仕様確定",
+            "- 課題: 課題Aの担当調整\n- 課題: 課題Bの仕様確定",
+        ],
+    )
+
+    last_summary, global_turn = meeting._run_resolution_phase(meeting.cfg.agents, "", 1)
+
+    assert last_summary == "- 課題: 課題Aの担当調整\n- 課題: 課題Bの仕様確定"
+    assert meeting._pending.items == {"課題Aの担当調整", "課題Bの仕様確定"}
+    assert meeting._unresolved_history[-1] == 2
+    assert global_turn == 3
+    assert len(meeting.history) == 2
+    meeting.metrics.stop()
