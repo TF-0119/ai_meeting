@@ -58,7 +58,16 @@ def _make_meeting(response: str, agent_names: Optional[List[str]] = None) -> Mee
     meeting._test_mode = False
     meeting.logger = SimpleNamespace(
         append_warning=lambda *args, **kwargs: None,
+        new_span_id=lambda: "span-test",
     )
+    meeting._log_metadata = {
+        "prompt_version": "test",
+        "model_version": "test-model",
+        "decode_params": {"temperature": 0.0, "max_tokens": 0},
+    }
+    meeting._round_span_ids = {}
+    meeting._current_round_id = None
+    meeting._current_phase_context = {}
     meeting._last_spoke = {}
     meeting._latest_kpi_metrics = {}
     return meeting

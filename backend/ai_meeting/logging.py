@@ -7,6 +7,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, Optional
+from uuid import uuid4
 
 
 class LiveLogWriter:
@@ -21,6 +22,7 @@ class LiveLogWriter:
         *,
         enable_markdown: bool = True,
         enable_jsonl: bool = True,
+        run_id: Optional[str] = None,
     ):
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         safe_topic = "".join(c if c.isalnum() or c in "-_（）()[]" else "_" for c in topic)[:80]
@@ -37,6 +39,8 @@ class LiveLogWriter:
         # ★ 思考ログ（デバッグ用・本文には出さない）
         self.thoughts_log = base_dir / "thoughts.jsonl"
         self.summary_probe_log = base_dir / summary_probe_filename
+        self.run_id = run_id or uuid4().hex
+        self._span_counter = 0
 
         # ヘッダを書いておく
         if self.md:
@@ -60,7 +64,7 @@ class LiveLogWriter:
 
     def append_turn(
         self,
-        round_idx: int,
+        round_id: int,
         turn_idx: int,
         speaker: str,
         content: str,
@@ -69,6 +73,12 @@ class LiveLogWriter:
         phase_turn: Optional[int] = None,
         phase_kind: Optional[str] = None,
         phase_base: Optional[int] = None,
+        span_id: Optional[str] = None,
+        parent_span_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        prompt_version: Optional[str] = None,
+        model_version: Optional[str] = None,
+        decode_params: Optional[Dict[str, Any]] = None,
     ):
         """1発言分のログを追記する。"""
 
@@ -81,11 +91,18 @@ class LiveLogWriter:
         record = self._create_record(
             "turn",
             {
-                "round": round_idx,
+                "round": round_id,
                 "turn": turn_idx,
                 "speaker": speaker,
                 "content": content,
             },
+            round_id=round_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            agent_id=agent_id,
+            prompt_version=prompt_version,
+            model_version=model_version,
+            decode_params=decode_params,
             phase_id=phase_id,
             phase_turn=phase_turn,
             phase_kind=phase_kind,
@@ -120,13 +137,19 @@ class LiveLogWriter:
 
     def append_summary(
         self,
-        round_idx: int,
+        round_id: int,
         summary: str,
         *,
         phase_id: Optional[int] = None,
         phase_turn: Optional[int] = None,
         phase_kind: Optional[str] = None,
         phase_base: Optional[int] = None,
+        span_id: Optional[str] = None,
+        parent_span_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        prompt_version: Optional[str] = None,
+        model_version: Optional[str] = None,
+        decode_params: Optional[Dict[str, Any]] = None,
     ):
         """ラウンド要約を追記する。"""
 
@@ -144,9 +167,16 @@ class LiveLogWriter:
         record = self._create_record(
             "summary",
             {
-                "round": round_idx,
+                "round": round_id,
                 "summary": text,
             },
+            round_id=round_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            agent_id=agent_id,
+            prompt_version=prompt_version,
+            model_version=model_version,
+            decode_params=decode_params,
             phase_id=phase_id,
             phase_turn=phase_turn,
             phase_kind=phase_kind,
@@ -174,7 +204,18 @@ class LiveLogWriter:
                 except json.JSONDecodeError as exc:  # pragma: no cover - 想定外のログ破損
                     raise ValueError("summary_probe ログの形式が不正です。") from exc
 
-    def append_final(self, final_text: str):
+    def append_final(
+        self,
+        final_text: str,
+        *,
+        round_id: Optional[int] = None,
+        span_id: Optional[str] = None,
+        parent_span_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        prompt_version: Optional[str] = None,
+        model_version: Optional[str] = None,
+        decode_params: Optional[Dict[str, Any]] = None,
+    ):
         """最終合意内容を追記する。"""
 
         text = final_text.strip()
@@ -185,7 +226,17 @@ class LiveLogWriter:
                 else:
                     f.write("## Final Decision / 合意案\n\n" + text + "\n")
                 f.flush()
-        record = self._create_record("final", {"final": final_text})
+        record = self._create_record(
+            "final",
+            {"final": final_text},
+            round_id=round_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            agent_id=agent_id,
+            prompt_version=prompt_version,
+            model_version=model_version,
+            decode_params=decode_params,
+        )
         self._append_jsonl(record)
 
     def append_kpi(self, kpi: Dict):
@@ -202,10 +253,40 @@ class LiveLogWriter:
             encoding="utf-8",
         )
 
-    def append_warning(self, message: str, *, context: Optional[Dict[str, Any]] = None) -> None:
+    def append_warning(
+        self,
+        message: str,
+        *,
+        context: Optional[Dict[str, Any]] = None,
+        round_id: Optional[int] = None,
+        span_id: Optional[str] = None,
+        parent_span_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        prompt_version: Optional[str] = None,
+        model_version: Optional[str] = None,
+        decode_params: Optional[Dict[str, Any]] = None,
+        phase_id: Optional[int] = None,
+        phase_turn: Optional[int] = None,
+        phase_kind: Optional[str] = None,
+        phase_base: Optional[int] = None,
+    ) -> None:
         """警告情報を JSONL ログへ追記する。"""
 
-        record = self._create_record("warning", {"message": message})
+        record = self._create_record(
+            "warning",
+            {"message": message},
+            round_id=round_id,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            agent_id=agent_id,
+            prompt_version=prompt_version,
+            model_version=model_version,
+            decode_params=decode_params,
+            phase_id=phase_id,
+            phase_turn=phase_turn,
+            phase_kind=phase_kind,
+            phase_base=phase_base,
+        )
         if context:
             record["context"] = context
         self._append_jsonl(record)
@@ -224,6 +305,13 @@ class LiveLogWriter:
         event_type: str,
         payload: Dict[str, Any],
         *,
+        round_id: Optional[int] = None,
+        span_id: Optional[str] = None,
+        parent_span_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        prompt_version: Optional[str] = None,
+        model_version: Optional[str] = None,
+        decode_params: Optional[Dict[str, Any]] = None,
         phase_id: Optional[int] = None,
         phase_turn: Optional[int] = None,
         phase_kind: Optional[str] = None,
@@ -234,33 +322,27 @@ class LiveLogWriter:
         record: Dict[str, Any] = {
             "ts": datetime.now().isoformat(timespec="seconds"),
             "type": event_type,
+            "run_id": self.run_id,
+            "round_id": round_id,
+            "span_id": span_id or self.new_span_id(),
+            "parent_span_id": parent_span_id,
+            "agent_id": agent_id,
+            "prompt_version": prompt_version,
+            "model_version": model_version,
+            "decode_params": dict(decode_params) if isinstance(decode_params, dict) else {},
+            "phase_id": phase_id,
+            "phase_turn": phase_turn,
+            "phase_kind": phase_kind,
+            "phase_base": phase_base,
         }
         record.update(payload)
-        phase_info = self._phase_record(phase_id, phase_turn, phase_kind, phase_base)
-        if phase_info:
-            record["phase"] = phase_info
         return record
 
-    @staticmethod
-    def _phase_record(
-        phase_id: Optional[int],
-        phase_turn: Optional[int],
-        phase_kind: Optional[str],
-        phase_base: Optional[int],
-    ) -> Optional[Dict[str, object]]:
-        """フェーズ情報の辞書表現を作成する。"""
+    def new_span_id(self) -> str:
+        """連番付きのスパンIDを採番する。"""
 
-        if phase_id is None or phase_turn is None:
-            return None
-        payload: Dict[str, object] = {
-            "id": phase_id,
-            "turn": phase_turn,
-        }
-        if phase_kind:
-            payload["kind"] = phase_kind
-        if phase_base is not None:
-            payload["base"] = phase_base
-        return payload
+        self._span_counter += 1
+        return f"span-{self._span_counter:06d}"
 
 
 __all__ = ["LiveLogWriter"]
