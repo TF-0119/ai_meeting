@@ -70,7 +70,8 @@ def _read_jsonl(path: Path) -> list[dict]:
     records = []
     for line in path.read_text(encoding="utf-8").splitlines():
         rec = json.loads(line)
-        rec.pop("ts", None)
+        for key in ("ts", "run_id", "span_id", "parent_span_id"):
+            rec.pop(key, None)
         records.append(rec)
     return records
 

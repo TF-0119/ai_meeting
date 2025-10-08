@@ -52,6 +52,24 @@ def test_summary_probe_logging_appends_json(tmp_path, monkeypatch) -> None:
             for line in (log_dir / "meeting_live.jsonl").read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
+        required_keys = {
+            "run_id",
+            "round_id",
+            "span_id",
+            "parent_span_id",
+            "agent_id",
+            "prompt_version",
+            "model_version",
+            "decode_params",
+            "phase_id",
+            "phase_turn",
+            "phase_kind",
+            "phase_base",
+        }
+        for rec in live_records:
+            for key in required_keys:
+                assert key in rec
+            assert isinstance(rec.get("decode_params"), dict)
         summary_records = [rec for rec in live_records if rec.get("type") == "summary"]
         expected_rounds = cfg.get_phase_turn_limit() or 0
         assert len(summary_records) == expected_rounds

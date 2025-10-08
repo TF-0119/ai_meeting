@@ -2,54 +2,90 @@
   "meeting_live": [
     {
       "type": "turn",
+      "round_id": 1,
+      "agent_id": "Alice",
+      "prompt_version": "v1",
+      "model_version": "unknown",
+      "decode_params": {
+        "temperature": 0.78,
+        "max_tokens": 800
+      },
+      "phase_id": 0,
+      "phase_turn": 1,
+      "phase_kind": "discussion",
+      "phase_base": 0,
       "round": 1,
       "turn": 1,
       "speaker": "Alice",
-      "content": "改善案: 手順・安全・得点方法を明記",
-      "phase": {
-        "id": 0,
-        "turn": 1,
-        "kind": "discussion",
-        "base": 0
-      }
+      "content": "改善案: 手順・安全・得点方法を明記"
     },
     {
       "type": "summary",
+      "round_id": 1,
+      "agent_id": "system",
+      "prompt_version": "v1",
+      "model_version": "unknown",
+      "decode_params": {
+        "temperature": 0.78,
+        "max_tokens": 800
+      },
+      "phase_id": 0,
+      "phase_turn": 1,
+      "phase_kind": "discussion",
+      "phase_base": 0,
       "round": 1,
-      "summary": "- 差分: 改善案: 手順・安全・得点方法を明記",
-      "phase": {
-        "id": 0,
-        "turn": 1,
-        "kind": "discussion",
-        "base": 0
-      }
+      "summary": "- 差分: 改善案: 手順・安全・得点方法を明記"
     },
     {
       "type": "turn",
+      "round_id": 2,
+      "agent_id": "Bob",
+      "prompt_version": "v1",
+      "model_version": "unknown",
+      "decode_params": {
+        "temperature": 0.78,
+        "max_tokens": 800
+      },
+      "phase_id": 0,
+      "phase_turn": 2,
+      "phase_kind": "discussion",
+      "phase_base": 0,
       "round": 2,
       "turn": 2,
       "speaker": "Bob",
-      "content": "改善案: 手順・安全・得点方法を明記",
-      "phase": {
-        "id": 0,
-        "turn": 2,
-        "kind": "discussion",
-        "base": 0
-      }
+      "content": "改善案: 手順・安全・得点方法を明記"
     },
     {
       "type": "summary",
+      "round_id": 2,
+      "agent_id": "system",
+      "prompt_version": "v1",
+      "model_version": "unknown",
+      "decode_params": {
+        "temperature": 0.78,
+        "max_tokens": 800
+      },
+      "phase_id": 0,
+      "phase_turn": 2,
+      "phase_kind": "discussion",
+      "phase_base": 0,
       "round": 2,
-      "summary": "- 差分: 改善案: 手順・安全・得点方法を明記",
-      "phase": {
-        "id": 0,
-        "turn": 2,
-        "kind": "discussion",
-        "base": 0
-      }
+      "summary": "- 差分: 改善案: 手順・安全・得点方法を明記"
     },
     {
       "type": "final",
+      "round_id": null,
+      "agent_id": "system",
+      "prompt_version": "v1",
+      "model_version": "unknown",
+      "decode_params": {
+        "temperature": 0.78,
+        "max_tokens": 800
+      },
+      "phase_id": null,
+      "phase_turn": null,
+      "phase_kind": null,
+      "phase_base": null,
       "final": "合意事項:\n- 空間を活かす新スポーツを実証する\n- 用具の安全確保と得点管理を両立\n残課題:\n- 動作手順の動画化で理解を補強\n直近アクション:\n- 担当:Alice が安全テストを実施 (期限:来週)\n- 担当:Bob がKPI測定を設計 (期限:来月)"
     }
   ],

@@ -40,6 +40,22 @@ def _read_warnings(log_path: Path) -> list[dict]:
             continue
         data = json.loads(line)
         if data.get("type") == "warning":
+            for key in [
+                "run_id",
+                "round_id",
+                "span_id",
+                "parent_span_id",
+                "agent_id",
+                "prompt_version",
+                "model_version",
+                "decode_params",
+                "phase_id",
+                "phase_turn",
+                "phase_kind",
+                "phase_base",
+            ]:
+                assert key in data
+            assert isinstance(data.get("decode_params"), dict)
             records.append(data)
     return records
 

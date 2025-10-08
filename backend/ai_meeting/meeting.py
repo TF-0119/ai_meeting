@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
+from uuid import uuid4
 
 from .config import AgentConfig, MeetingConfig, Turn
 from .controllers import KPIFeedback, Monitor, PendingTracker, PhaseEvent, ShockEngine
@@ -65,6 +66,9 @@ PERSONALITY_LIBRARY: Tuple[PersonalityTemplate, ...] = (
 PERSONALITY_TEMPLATES: Dict[str, PersonalityTemplate] = {
     template.name: template for template in PERSONALITY_LIBRARY
 }
+
+
+PROMPT_VERSION = "v1"
 
 
 @dataclass(frozen=True)
@@ -198,6 +202,8 @@ class Meeting:
         self.critique_passes = rp["critique_passes"]
         self._summary_probe = SummaryProbe(self.backend, self.cfg)
         self._pending = PendingTracker()  # 残課題トラッカー
+        cfg_run_id = getattr(self.cfg, "run_id", None)
+        self.run_id = cfg_run_id if isinstance(cfg_run_id, str) and cfg_run_id else uuid4().hex
         self.logger = LiveLogWriter(
             self.cfg.topic,
             outdir=self.cfg.outdir,
@@ -205,7 +211,22 @@ class Meeting:
             summary_probe_filename=self.cfg.summary_probe_filename,
             enable_markdown=self.cfg.log_markdown_enabled,
             enable_jsonl=self.cfg.log_jsonl_enabled,
+            run_id=self.run_id,
         )
+        self._round_span_ids: Dict[int, str] = {}
+        self._current_round_id: Optional[int] = None
+        self._current_phase_context: Dict[str, Any] = {}
+        backend_model = getattr(self.backend, "model", None)
+        if not backend_model:
+            backend_model = getattr(self.backend, "model_name", None)
+        self._log_metadata = {
+            "prompt_version": PROMPT_VERSION,
+            "model_version": backend_model or "unknown",
+            "decode_params": {
+                "temperature": self.temperature,
+                "max_tokens": self.cfg.max_tokens,
+            },
+        }
         self.equilibrium_enabled = self.cfg.equilibrium
         self._monitor = Monitor(self.cfg) if self.cfg.monitor else None
         self._phase_id = 0
@@ -570,6 +591,48 @@ class Meeting:
         bullets = "\n".join(f"- {item}" for item in memory)
         return f"最近の覚書:\n{bullets}"
 
+    def _log_warning(
+        self,
+        message: str,
+        *,
+        context: Optional[Dict[str, Any]] = None,
+        round_idx: Optional[int] = None,
+        agent_name: Optional[str] = None,
+        phase_id: Optional[int] = None,
+        phase_turn: Optional[int] = None,
+        phase_kind: Optional[str] = None,
+        phase_base: Optional[int] = None,
+    ) -> None:
+        """LiveLogWriter に警告イベントを記録する共通ヘルパー。"""
+
+        resolved_round = round_idx if round_idx is not None else self._current_round_id
+        phase_defaults = self._current_phase_context if isinstance(self._current_phase_context, dict) else {}
+        phase_id = phase_id if phase_id is not None else phase_defaults.get("phase_id")
+        phase_turn = phase_turn if phase_turn is not None else phase_defaults.get("phase_turn")
+        phase_kind = phase_kind if phase_kind is not None else phase_defaults.get("phase_kind")
+        phase_base = phase_base if phase_base is not None else phase_defaults.get("phase_base")
+        span_id = self.logger.new_span_id()
+        parent_span_id = None
+        if isinstance(resolved_round, int):
+            parent_span_id = self._round_span_ids.get(resolved_round)
+        metadata = self._log_metadata
+        decode_params = metadata.get("decode_params")
+        self.logger.append_warning(
+            message,
+            context=context,
+            round_id=resolved_round,
+            agent_id=agent_name,
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            prompt_version=metadata.get("prompt_version"),
+            model_version=metadata.get("model_version"),
+            decode_params=dict(decode_params) if isinstance(decode_params, dict) else {},
+            phase_id=phase_id,
+            phase_turn=phase_turn,
+            phase_kind=phase_kind,
+            phase_base=phase_base,
+        )
+
     def _record_agent_memory(
         self,
         agent_names: Any,
@@ -596,25 +659,30 @@ class Meeting:
         turn = self.history[-1]
         base_entries: List[str] = []
         summary_text = ""
+        current_round_idx = len(self.history) if self.history else None
         if isinstance(summary_payload, dict):
             raw_summary = summary_payload.get("summary")
             if raw_summary is None or isinstance(raw_summary, str):
                 summary_text = raw_summary or ""
             else:
-                self.logger.append_warning(
+                self._log_warning(
                     "agent_memory_invalid_summary_text",
                     context={
                         "speaker": getattr(turn, "speaker", ""),
                         "received_type": type(raw_summary).__name__,
                     },
+                    round_idx=current_round_idx,
+                    agent_name=speaker_name or getattr(turn, "speaker", None),
                 )
         elif summary_payload is not None:
-            self.logger.append_warning(
+            self._log_warning(
                 "agent_memory_invalid_summary_payload",
                 context={
                     "speaker": getattr(turn, "speaker", ""),
                     "received_type": type(summary_payload).__name__,
                 },
+                round_idx=current_round_idx,
+                agent_name=speaker_name or getattr(turn, "speaker", None),
             )
         if summary_text:
             seen_base: set[str] = set()
@@ -628,12 +696,14 @@ class Meeting:
         if isinstance(turn.content, str):
             fallback = turn.content.strip()
         elif turn.content is not None:
-            self.logger.append_warning(
+            self._log_warning(
                 "agent_memory_invalid_turn_content",
                 context={
                     "speaker": getattr(turn, "speaker", ""),
                     "received_type": type(turn.content).__name__,
                 },
+                round_idx=current_round_idx,
+                agent_name=speaker_name or getattr(turn, "speaker", None),
             )
         if not base_entries and fallback:
             base_entries.append(fallback)
@@ -751,6 +821,8 @@ class Meeting:
         bundle: Dict[str, str],
         last_summary: str,
         flow_summary: str,
+        *,
+        round_idx: Optional[int] = None,
     ) -> Dict:
         names = list(bundle.keys())
         if not names:
@@ -862,9 +934,10 @@ class Meeting:
             """LLM出力の数値フィールドを安全に取得するヘルパー。"""
 
             if not isinstance(rec, dict):
-                self.logger.append_warning(
+                self._log_warning(
                     "judge_scores_invalid_record",
                     context={"field": key, "received_type": type(rec).__name__},
+                    round_idx=round_idx,
                 )
                 return 0.0
 
@@ -875,16 +948,18 @@ class Meeting:
             try:
                 value = float(raw_value)
             except (TypeError, ValueError):
-                self.logger.append_warning(
+                self._log_warning(
                     "judge_scores_non_numeric",
                     context={"field": key, "received_type": type(raw_value).__name__},
+                    round_idx=round_idx,
                 )
                 return 0.0
 
             if math.isnan(value):
-                self.logger.append_warning(
+                self._log_warning(
                     "judge_scores_nan",
                     context={"field": key},
+                    round_idx=round_idx,
                 )
                 return 0.0
 
@@ -1089,9 +1164,10 @@ class Meeting:
             if isinstance(round_summary, str):
                 candidate_lines.extend(round_summary.splitlines())
             else:
-                self.logger.append_warning(
+                self._log_warning(
                     "conversation_summary_invalid_round_summary",
                     context={"received_type": type(round_summary).__name__},
+                    round_idx=self._current_round_id,
                 )
         if not candidate_lines and new_turn is not None:
             content_value = getattr(new_turn, "content", "")
@@ -1099,12 +1175,14 @@ class Meeting:
                 content = content_value.strip()
             else:
                 content = ""
-                self.logger.append_warning(
+                self._log_warning(
                     "conversation_summary_invalid_turn_content",
                     context={
                         "speaker": getattr(new_turn, "speaker", ""),
                         "received_type": type(content_value).__name__,
                     },
+                    round_idx=self._current_round_id,
+                    agent_name=getattr(new_turn, "speaker", None),
                 )
             if content:
                 speaker_name = new_turn.speaker if isinstance(new_turn.speaker, str) else str(new_turn.speaker)
@@ -1222,13 +1300,15 @@ class Meeting:
         try:
             result = self._summary_probe.generate_summary(new_turn, self.history)
         except Exception as exc:  # noqa: BLE001 - LLM呼び出し失敗時は握りつぶす
-            self.logger.append_warning(
+            self._log_warning(
                 "summary_probe_failed",
                 context={
                     "error": str(exc),
                     "turn_index": len(self.history),
                     "speaker": getattr(new_turn, "speaker", ""),
                 },
+                round_idx=self._current_round_id,
+                agent_name=getattr(new_turn, "speaker", None),
             )
             return {"summary": ""}
         return result
@@ -1260,7 +1340,7 @@ class Meeting:
                 record["phase"] = phase_payload
             self.logger.append_summary_probe(record)
         except Exception as exc:  # noqa: BLE001 - ログ記録では失敗を握りつぶす
-            self.logger.append_warning(
+            self._log_warning(
                 "summary_probe_logging_failed",
                 context={
                     "error": str(exc),
@@ -1268,6 +1348,12 @@ class Meeting:
                     "turn_index": len(self.history),
                     "speaker": turn.speaker,
                 },
+                round_idx=round_idx,
+                agent_name=turn.speaker,
+                phase_id=phase_id,
+                phase_turn=phase_turn,
+                phase_kind=phase_kind,
+                phase_base=phase_base,
             )
 
     def _critic_pass(self, text: str) -> str:
@@ -1390,6 +1476,13 @@ class Meeting:
 
             phase_turn = current_phase.turn_count + 1
             round_idx = self._phase_round_index(current_phase, phase_turn)
+            self._current_round_id = round_idx
+            self._current_phase_context = {
+                "phase_id": current_phase.id,
+                "phase_turn": phase_turn,
+                "phase_kind": current_phase.kind,
+                "phase_base": current_phase.start_turn - 1,
+            }
 
             if not self.cfg.ui_minimal:
                 banner(f"Round {round_idx}")
@@ -1397,7 +1490,12 @@ class Meeting:
             flow_summary = self._conversation_summary()
             if self.cfg.think_mode:
                 thoughts: Dict[str, str] = {ag.name: self._think(ag, last_summary) for ag in self.cfg.agents}
-                verdict = self._judge_thoughts(thoughts, last_summary, flow_summary)
+                verdict = self._judge_thoughts(
+                    thoughts,
+                    last_summary,
+                    flow_summary,
+                    round_idx=round_idx,
+                )
                 previous_speaker = self.history[-1].speaker if self.history else None
                 winner_name = self._resolve_winner(
                     verdict, previous_speaker, global_turn
@@ -1422,11 +1520,21 @@ class Meeting:
                     if self.cfg.ui_minimal
                     else f"{winner.name}:\n{content}\n"
                 )
+                span_id = self.logger.new_span_id()
+                self._round_span_ids[round_idx] = span_id
+                metadata = self._log_metadata
+                decode_params = metadata.get("decode_params")
                 self.logger.append_turn(
-                    round_idx,
-                    len(self.history),
-                    winner.name,
-                    content,
+                    round_id=round_idx,
+                    turn_idx=len(self.history),
+                    speaker=winner.name,
+                    content=content,
+                    agent_id=winner.name,
+                    span_id=span_id,
+                    parent_span_id=None,
+                    prompt_version=metadata.get("prompt_version"),
+                    model_version=metadata.get("model_version"),
+                    decode_params=dict(decode_params) if isinstance(decode_params, dict) else {},
                     phase_id=current_phase.id,
                     phase_turn=phase_turn,
                     phase_kind=current_phase.kind,
@@ -1446,11 +1554,21 @@ class Meeting:
                     content = tmp
                 self.history.append(Turn(speaker=speaker.name, content=content))
                 safe_console_print(f"{speaker.name}: {content}\n")
+                span_id = self.logger.new_span_id()
+                self._round_span_ids[round_idx] = span_id
+                metadata = self._log_metadata
+                decode_params = metadata.get("decode_params")
                 self.logger.append_turn(
-                    round_idx,
-                    len(self.history),
-                    speaker.name,
-                    content,
+                    round_id=round_idx,
+                    turn_idx=len(self.history),
+                    speaker=speaker.name,
+                    content=content,
+                    agent_id=speaker.name,
+                    span_id=span_id,
+                    parent_span_id=None,
+                    prompt_version=metadata.get("prompt_version"),
+                    model_version=metadata.get("model_version"),
+                    decode_params=dict(decode_params) if isinstance(decode_params, dict) else {},
                     phase_id=current_phase.id,
                     phase_turn=phase_turn,
                     phase_kind=current_phase.kind,
@@ -1537,9 +1655,18 @@ class Meeting:
                 new_turn=self.history[-1],
                 round_summary=last_summary or None,
             )
+            metadata = self._log_metadata
+            decode_params = metadata.get("decode_params")
+            summary_span_id = self.logger.new_span_id()
             self.logger.append_summary(
-                round_idx,
-                last_summary,
+                round_id=round_idx,
+                summary=last_summary,
+                agent_id="system",
+                span_id=summary_span_id,
+                parent_span_id=self._round_span_ids.get(round_idx),
+                prompt_version=metadata.get("prompt_version"),
+                model_version=metadata.get("model_version"),
+                decode_params=dict(decode_params) if isinstance(decode_params, dict) else {},
                 phase_id=current_phase.id,
                 phase_turn=phase_turn,
                 phase_kind=current_phase.kind,
@@ -1663,7 +1790,18 @@ class Meeting:
         )
         banner("Final Decision / 合意案")
         safe_console_print(final)
-        self.logger.append_final(final)
+        metadata = self._log_metadata
+        decode_params = metadata.get("decode_params")
+        self.logger.append_final(
+            final,
+            round_id=None,
+            agent_id="system",
+            span_id=self.logger.new_span_id(),
+            parent_span_id=None,
+            prompt_version=metadata.get("prompt_version"),
+            model_version=metadata.get("model_version"),
+            decode_params=dict(decode_params) if isinstance(decode_params, dict) else {},
+        )
 
         # Step6: KPI 評価と保存（最後の Meeting クラスにも入れる）
         kpi_result: Optional[Dict] = None
@@ -1813,11 +1951,28 @@ class Meeting:
 
                 phase_turn = state.turn_count + 1
                 round_idx = self._phase_round_index(state, phase_turn)
+                self._current_round_id = round_idx
+                self._current_phase_context = {
+                    "phase_id": state.id,
+                    "phase_turn": phase_turn,
+                    "phase_kind": state.kind,
+                    "phase_base": state.start_turn - 1,
+                }
+                span_id = self.logger.new_span_id()
+                self._round_span_ids[round_idx] = span_id
+                metadata = self._log_metadata
+                decode_params = metadata.get("decode_params")
                 self.logger.append_turn(
-                    round_idx,
-                    len(self.history),
-                    agent.name,
-                    content,
+                    round_id=round_idx,
+                    turn_idx=len(self.history),
+                    speaker=agent.name,
+                    content=content,
+                    agent_id=agent.name,
+                    span_id=span_id,
+                    parent_span_id=None,
+                    prompt_version=metadata.get("prompt_version"),
+                    model_version=metadata.get("model_version"),
+                    decode_params=dict(decode_params) if isinstance(decode_params, dict) else {},
                     phase_id=state.id,
                     phase_turn=phase_turn,
                     phase_kind=state.kind,
@@ -1835,9 +1990,18 @@ class Meeting:
                     new_turn=self.history[-1],
                     round_summary=last_summary or None,
                 )
+                metadata = self._log_metadata
+                decode_params = metadata.get("decode_params")
+                summary_span_id = self.logger.new_span_id()
                 self.logger.append_summary(
-                    round_idx,
-                    last_summary,
+                    round_id=round_idx,
+                    summary=last_summary,
+                    agent_id="system",
+                    span_id=summary_span_id,
+                    parent_span_id=self._round_span_ids.get(round_idx),
+                    prompt_version=metadata.get("prompt_version"),
+                    model_version=metadata.get("model_version"),
+                    decode_params=dict(decode_params) if isinstance(decode_params, dict) else {},
                     phase_id=state.id,
                     phase_turn=phase_turn,
                     phase_kind=state.kind,
