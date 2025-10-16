@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, Sequence
 
 from .config import MeetingConfig, Turn
+from .cycle_template import extract_cycle_text
 from .llm import LLMBackend, LLMRequest
 
 
@@ -23,12 +24,13 @@ class SummaryProbe:
                 turn_number = idx
                 break
 
+        input_text = extract_cycle_text(turn.content)
         req = LLMRequest(
             system=(
                 "あなたは議事要約アシスタント。新しい発言を日本語で要点化し、"
                 "意思決定に重要な差分だけを3〜6点で箇条書きに。"
             ),
-            messages=[{"role": "user", "content": turn.content}],
+            messages=[{"role": "user", "content": input_text}],
             temperature=self._config.summary_probe_temperature,
             max_tokens=self._config.summary_probe_max_tokens,
         )
@@ -37,7 +39,7 @@ class SummaryProbe:
         return {
             "turn_index": turn_number,
             "speaker": turn.speaker,
-            "input_text": turn.content,
+            "input_text": input_text,
             "summary": summary,
             "parameters": {
                 "temperature": self._config.summary_probe_temperature,

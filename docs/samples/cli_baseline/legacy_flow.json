@@ -5,7 +5,7 @@
       "round": 1,
       "turn": 1,
       "speaker": "Alice",
-      "content": "改善案: 手順・安全・得点方法を明記",
+      "content": "{\"cycle\": 1, \"diverge\": \"テーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(ASSERTIVE): 意思決定を急ぎ、明確な行動を求める推進役。\", \"learn\": \"\", \"converge\": \"改善案: 手順・安全・得点方法を明記\", \"next_goal\": \"\", \"assumptions\": [], \"links\": []}",
       "phase": {
         "id": 0,
         "turn": 1,
@@ -29,7 +29,7 @@
       "round": 2,
       "turn": 2,
       "speaker": "Bob",
-      "content": "改善案: 手順・安全・得点方法を明記",
+      "content": "{\"cycle\": 2, \"diverge\": \"前回の発言者: Alice\\n発言要約: 改善案: 手順・安全・得点方法を明記\\n前ラウンド要約:\\n- 差分: 改善案: 手順・安全・得点方法を明記\\nテーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(EMPATHIC): 相手の感情と懸念をすくい上げ、協調的な合意形成を促す支援役。\\n- Aliceの発言: 差分: 改善案: 手順・安全・得点方法を明記\", \"learn\": \"- 差分: 改善案: 手順・安全・得点方法を明記\\n- 差分: 改善案: 手順・安全・得点方法を明記\", \"converge\": \"改善案: 手順・安全・得点方法を明記\", \"next_goal\": \"\", \"assumptions\": [], \"links\": []}",
       "phase": {
         "id": 0,
         "turn": 2,
@@ -80,12 +80,12 @@
     "turns": [
       {
         "speaker": "Alice",
-        "content": "改善案: 手順・安全・得点方法を明記",
+        "content": "{\"cycle\": 1, \"diverge\": \"テーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(ASSERTIVE): 意思決定を急ぎ、明確な行動を求める推進役。\", \"learn\": \"\", \"converge\": \"改善案: 手順・安全・得点方法を明記\", \"next_goal\": \"\", \"assumptions\": [], \"links\": []}",
         "meta": {}
       },
       {
         "speaker": "Bob",
-        "content": "改善案: 手順・安全・得点方法を明記",
+        "content": "{\"cycle\": 2, \"diverge\": \"前回の発言者: Alice\\n発言要約: 改善案: 手順・安全・得点方法を明記\\n前ラウンド要約:\\n- 差分: 改善案: 手順・安全・得点方法を明記\\nテーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(EMPATHIC): 相手の感情と懸念をすくい上げ、協調的な合意形成を促す支援役。\\n- Aliceの発言: 差分: 改善案: 手順・安全・得点方法を明記\", \"learn\": \"- 差分: 改善案: 手順・安全・得点方法を明記\\n- 差分: 改善案: 手順・安全・得点方法を明記\", \"converge\": \"改善案: 手順・安全・得点方法を明記\", \"next_goal\": \"\", \"assumptions\": [], \"links\": []}",
         "meta": {}
       }
     ],
@@ -111,8 +111,8 @@
     "final": "合意事項:\n- 空間を活かす新スポーツを実証する\n- 用具の安全確保と得点管理を両立\n残課題:\n- 動作手順の動画化で理解を補強\n直近アクション:\n- 担当:Alice が安全テストを実施 (期限:来週)\n- 担当:Bob がKPI測定を設計 (期限:来月)",
     "kpi": {
       "progress": 0.0,
-      "diversity": 0.0,
-      "decision_density": 0.0,
+      "diversity": 0.538,
+      "decision_density": 1.0,
       "spec_coverage": 1.0
     },
     "files": {
@@ -130,8 +130,8 @@
   },
   "kpi": {
     "progress": 0.0,
-    "diversity": 0.0,
-    "decision_density": 0.0,
+    "diversity": 0.538,
+    "decision_density": 1.0,
     "spec_coverage": 1.0
   }
 }

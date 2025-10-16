@@ -22,6 +22,7 @@ from .logging import LiveLogWriter
 from .metrics import MetricsLogger
 from .summary_probe import SummaryProbe
 from .testing import NullMetricsLogger, is_test_mode, setup_test_environment
+from .cycle_template import build_cycle_payload, extract_cycle_text
 from .utils import banner, clamp, safe_console_print
 from .phase import PhaseState
 
@@ -251,7 +252,7 @@ class Meeting:
         for turn in reversed(self.history):
             if turn.speaker not in remaining:
                 continue
-            last_utterances[turn.speaker] = turn.content
+            last_utterances[turn.speaker] = extract_cycle_text(turn.content)
             remaining.remove(turn.speaker)
             if not remaining:
                 break
@@ -504,7 +505,9 @@ class Meeting:
         if not self.history:
             return ""
         tail = self.history[-max(1, n):]
-        return " / ".join(f"{t.speaker}:{t.content}" for t in tail)
+        return " / ".join(
+            f"{t.speaker}:{extract_cycle_text(t.content)}" for t in tail
+        )
 
     def _next_memory_timestamp(self) -> float:
         """覚書の生成順序を追跡するための単調増加タイムスタンプを返す。"""
@@ -626,7 +629,7 @@ class Meeting:
                 seen_base.add(clean)
         fallback = ""
         if isinstance(turn.content, str):
-            fallback = turn.content.strip()
+            fallback = extract_cycle_text(turn.content)
         elif turn.content is not None:
             self.logger.append_warning(
                 "agent_memory_invalid_turn_content",
@@ -711,7 +714,8 @@ class Meeting:
         last_turn = self.history[-1] if self.history else None
         if last_turn:
             # 直前発言の要点を1行にまとめる（思考を相手指向に寄せるため）。
-            normalized = " ".join(last_turn.content.strip().split())
+            last_text = extract_cycle_text(last_turn.content)
+            normalized = " ".join(last_text.split())
             if len(normalized) > 80:
                 normalized = normalized[:80] + "…"
             last_turn_detail = (
@@ -1096,7 +1100,7 @@ class Meeting:
         if not candidate_lines and new_turn is not None:
             content_value = getattr(new_turn, "content", "")
             if isinstance(content_value, str):
-                content = content_value.strip()
+                content = extract_cycle_text(content_value)
             else:
                 content = ""
                 self.logger.append_warning(
@@ -1144,7 +1148,9 @@ class Meeting:
         sys_prompt = agent.system
         last_turn = self.history[-1] if self.history else None
         last_speaker = last_turn.speaker if last_turn else ""
-        last_content = last_turn.content if last_turn else ""
+        last_content = (
+            extract_cycle_text(last_turn.content) if last_turn else ""
+        )
         profile = self._personality_profiles.get(agent.name)
 
         if not self.cfg.chat_mode:
@@ -1190,7 +1196,12 @@ class Meeting:
                 if summary_text:
                     prior_msgs.append({"role": "user", "content": f"会話サマリー:\n{summary_text}"})
             for t in self.history[-self.cfg.chat_window :]:
-                prior_msgs.append({"role": "user", "content": f"{t.speaker}: {t.content}"})
+                prior_msgs.append(
+                    {
+                        "role": "user",
+                        "content": f"{t.speaker}: {extract_cycle_text(t.content)}",
+                    }
+                )
         else:
             if last_turn:
                 prior_msgs.append(
@@ -1404,7 +1415,9 @@ class Meeting:
                 )
                 verdict["resolved_winner"] = winner_name
                 winner = next((a for a in self.cfg.agents if a.name == winner_name), self.cfg.agents[0])
-                content = self._speak_from_thought(winner, thoughts.get(winner.name, ""))
+                spoken_text = self._speak_from_thought(
+                    winner, thoughts.get(winner.name, "")
+                )
                 if self.cfg.think_debug:
                     self.logger.append_thoughts(
                         {
@@ -1416,11 +1429,32 @@ class Meeting:
                             "winner": winner.name,
                         }
                     )
+                cycle_no = len(self.history) + 1
+                phase_goal_text = (
+                    self.cfg.get_phase_goal(current_phase.kind)
+                    or goal_default
+                    or ""
+                )
+                learn_parts: List[str] = []
+                if flow_summary:
+                    learn_parts.append(flow_summary)
+                if last_summary:
+                    learn_parts.append(last_summary)
+                if verdict:
+                    learn_parts.append(json.dumps(verdict, ensure_ascii=False))
+                learn_text = "\n".join(part for part in learn_parts if part)
+                content = build_cycle_payload(
+                    cycle_no,
+                    thoughts.get(winner.name, ""),
+                    learn_text,
+                    spoken_text,
+                    phase_goal_text,
+                )
                 self.history.append(Turn(speaker=winner.name, content=content))
                 safe_console_print(
-                    f"{winner.name}: {content}\n"
+                    f"{winner.name}: {extract_cycle_text(content)}\n"
                     if self.cfg.ui_minimal
-                    else f"{winner.name}:\n{content}\n"
+                    else f"{winner.name}:\n{extract_cycle_text(content)}\n"
                 )
                 self.logger.append_turn(
                     round_idx,
@@ -1437,15 +1471,39 @@ class Meeting:
             else:
                 speaker = order[0]
                 req = self._agent_prompt(speaker, last_summary)
-                content = self.backend.generate(req)
-                content = self._enforce_chat_constraints(content)
+                spoken_text = self.backend.generate(req)
+                spoken_text = self._enforce_chat_constraints(spoken_text)
                 if self.critique_passes > 0:
-                    tmp = content
+                    tmp = spoken_text
                     for _ in range(int(self.critique_passes)):
                         tmp = self._critic_pass(tmp)
-                    content = tmp
+                    spoken_text = tmp
+                cycle_no = len(self.history) + 1
+                phase_goal_text = (
+                    self.cfg.get_phase_goal(current_phase.kind)
+                    or goal_default
+                    or ""
+                )
+                learn_parts: List[str] = []
+                if flow_summary:
+                    learn_parts.append(flow_summary)
+                if last_summary:
+                    learn_parts.append(last_summary)
+                learn_text = "\n".join(part for part in learn_parts if part)
+                diverge_source = "\n".join(
+                    str(msg.get("content", ""))
+                    for msg in req.messages
+                    if isinstance(msg, dict) and msg.get("role") == "user"
+                )
+                content = build_cycle_payload(
+                    cycle_no,
+                    diverge_source,
+                    learn_text,
+                    spoken_text,
+                    phase_goal_text,
+                )
                 self.history.append(Turn(speaker=speaker.name, content=content))
-                safe_console_print(f"{speaker.name}: {content}\n")
+                safe_console_print(f"{speaker.name}: {extract_cycle_text(content)}\n")
                 self.logger.append_turn(
                     round_idx,
                     len(self.history),
@@ -1804,12 +1862,37 @@ class Meeting:
                 )
                 req = self._agent_prompt(agent, last_summary)
                 req.messages.append({"role": "user", "content": extra})
-                content = self.backend.generate(req)
-                content = self._enforce_chat_constraints(content)
+                spoken_text = self.backend.generate(req)
+                spoken_text = self._enforce_chat_constraints(spoken_text)
                 if self.critique_passes > 0:
-                    content = self._critic_pass(content)
+                    spoken_text = self._critic_pass(spoken_text)
+                cycle_no = len(self.history) + 1
+                phase_goal_text = (
+                    self.cfg.get_phase_goal(state.kind)
+                    or self.cfg.get_phase_goal()
+                    or ""
+                )
+                flow_snapshot = self._conversation_summary()
+                learn_parts: List[str] = []
+                if flow_snapshot:
+                    learn_parts.append(flow_snapshot)
+                if last_summary:
+                    learn_parts.append(last_summary)
+                diverge_source = "\n".join(
+                    str(msg.get("content", ""))
+                    for msg in req.messages
+                    if isinstance(msg, dict) and msg.get("role") == "user"
+                )
+                learn_text = "\n".join(part for part in learn_parts if part)
+                content = build_cycle_payload(
+                    cycle_no,
+                    diverge_source,
+                    learn_text,
+                    spoken_text,
+                    phase_goal_text,
+                )
                 self.history.append(Turn(speaker=agent.name, content=content))
-                safe_console_print(f"{agent.name}:\n{content}\n")
+                safe_console_print(f"{agent.name}:\n{extract_cycle_text(content)}\n")
 
                 phase_turn = state.turn_count + 1
                 round_idx = self._phase_round_index(state, phase_turn)
