@@ -705,6 +705,8 @@ class Meeting:
             "あなたは会議参加者です。これは『内面の思考』であり出力は他者に公開されません。"
             "短く（1〜2文、日本語）、次の一手として有効な案だけを書いてください。"
             "見出し・箇条書き・メタ言及は禁止。"
+            "Diverge（探索仮説）/Learn（観測や学び）/Converge（収束判断）/next_goal（次に検証する焦点）につながるメモを意識し、"
+            "必要に応じて仮説・観測・確証・懸念・測定計画などの要素を短文で整理してください。"
         )
         profile = self._personality_profiles.get(agent.name)
         if profile:
@@ -733,6 +735,7 @@ class Meeting:
             f"要約: {last_summary}" if last_summary else "要約: (未設定)",
             "",
             "前回の発言者（名前）への応答方針を1文でまとめ、必要なら次の質問を用意する。",
+            "Cycleメモ候補: Diverge/仮説, Learn/観測, Converge/確証, next_goal/次の焦点。",
             "次の一手（思考のみ）:",
         ]
         if profile:
@@ -1061,10 +1064,17 @@ class Meeting:
     def _speak_from_thought(self, agent: AgentConfig, thought: str) -> str:
         sys = (
             agent.system
-            + "\n※以下はあなた自身の非公開メモです。要点だけを1〜2文の発言にし、"
-            + "『メモ/思考/ヒント』等の語は本文に含めないこと。"
+            + "\n※以下はあなた自身の非公開メモです。要点を基に"
+            + " {\"diverge\": \"...\", \"learn\": \"...\", \"converge\": \"...\", \"next_goal\": \"...\"}"
+            + " のJSONを日本語で出力してください。"
+            + "各値は1〜2文で整理し、禁止語（見出し、箇条書き、コードブロック、絵文字、メタ言及）や"
+            + "『メモ/思考/ヒント』等の語を本文に含めないこと。"
+            + "余計なテキストは一切付けない。"
         )
-        user = f"[自分の思考] {thought}\n\nこの要点を1〜2文の発言として述べてください。"
+        user = (
+            f"[自分の思考] {thought}\n\n"
+            "上記の思考から得た Diverge/Learn/Converge/next_goal の内容をJSONで返してください。"
+        )
         req = LLMRequest(
             system=sys,
             messages=[{"role": "user", "content": user}],
@@ -1153,31 +1163,25 @@ class Meeting:
         )
         profile = self._personality_profiles.get(agent.name)
 
-        if not self.cfg.chat_mode:
-            # 既存の“発表型”ルール
-            sys_prompt += textwrap.dedent(
-                f"""
-                \n--- 会議ルール ---
-- テーマ: {self.cfg.topic}
-- 名前: {agent.name}
-- 出力は必ず日本語。簡潔、箇条書き主体。過度な前置きは省略。
-- 先の発言・要約を踏まえ、話を前に進める。
-- 直前の発言（発言者名と要約）に対して具体的に応答する。
-- 最後に「次に誰が何をするべきか」を1行で明示。
-                """
+        rule_lines = [
+            "--- 会議ルール ---" if not self.cfg.chat_mode else "--- 会話ルール（短文チャット）---",
+            f"- テーマ: {self.cfg.topic}",
+            f"- 名前: {agent.name}",
+            "- 出力は必ず日本語。余計な前置きや説明は避ける。",
+            "- 出力形式: 下記キーを持つ JSON オブジェクトのみを返す。",
+            '  {"diverge": "...", "learn": "...", "converge": "...", "next_goal": "..."}',
+            "- 各値は1〜2文の短文でまとめ、禁止語（見出し、箇条書き、コードブロック、絵文字、メタ言及）を含めない。",
+            "- JSON 以外のテキストや装飾を付けない。",
+        ]
+        if self.cfg.chat_mode:
+            rule_lines.append(
+                f"- 各値は{self.cfg.chat_max_sentences}文以内・1文{self.cfg.chat_max_chars}文字以内を目安に簡潔にする。"
             )
+            rule_lines.append("- 直前の発言を踏まえ、各値が会話の次の前進にどう寄与するかを書く。")
         else:
-            # 短文チャット用の厳格ルール
-            sys_prompt += textwrap.dedent(
-                f"""
-                \n--- 会話ルール（短文チャット）---
-- テーマ: {self.cfg.topic}
-- 名前: {agent.name}
-- 出力は必ず日本語。絵文字・見出し・箇条書き・コードブロックは禁止。
-- {self.cfg.chat_max_sentences}文以内、1文{self.cfg.chat_max_chars}文字以内。冗長な前き禁止。
-- 直前の発言に一言で応答し、具体的な次の一歩を短く示す。
-                """
-            )
+            rule_lines.append("- 先の発言・要約を踏まえ、各値が議論を前に進める内容になるよう整理する。")
+            rule_lines.append("- 直前の発言（発言者名と要約）に対して具体的に応答する。")
+        sys_prompt += "\n" + "\n".join(rule_lines)
         if profile:
             sys_prompt += textwrap.dedent(
                 f"""
