@@ -52,6 +52,8 @@ def test_think_prompt_focuses_on_last_speaker(tmp_path, monkeypatch):
     user_prompt = req.messages[0]["content"]
     assert "last_turn_detail: Bob: 議論の現状を整理したので、次は役割分担を決めたい。" in user_prompt
     assert "前回の発言者（名前）への応答方針を1文でまとめ、必要なら次の質問を用意する。" in req.messages[0]["content"]
+    assert "Cycleメモ候補: Diverge/仮説, Learn/観測, Converge/確証, next_goal/次の焦点。" in req.messages[0]["content"]
+    assert "Diverge（探索仮説）/Learn（観測や学び）/Converge（収束判断）/next_goal（次に検証する焦点）" in req.system
 
 
 def test_think_prompt_includes_agent_memory(tmp_path, monkeypatch):

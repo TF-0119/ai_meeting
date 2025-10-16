@@ -28,10 +28,10 @@ class DeterministicLLMBackend(LLMBackend):
 
         if "内面の思考" in system:
             name = self.agent_names[self._think_calls % len(self.agent_names)]
-            base = ["空間を活かす", "用具を工夫する", "得点方法を明確化する"]
+            base = ["仮説を検証する", "観測を整理する", "確証を補強する"]
             idea = base[self._think_calls % len(base)]
             self._think_calls += 1
-            return f"{name}視点: {idea}案を検証する"
+            return f"{name}視点: {idea}"
 
         if "中立の審査員" in system:
             names = [
@@ -61,11 +61,16 @@ class DeterministicLLMBackend(LLMBackend):
         if "非公開メモ" in system:
             match = self._THOUGHT_RE.search(last_msg)
             thought = match.group(1).strip() if match else "要点を整理"
+            for term in ("見出し", "箇条書き", "コードブロック", "絵文字", "メタ言及"):
+                thought = thought.replace(term, "")
             agent_hint = self.agent_names[(self._judge_calls - 1) % len(self.agent_names)]
-            return (
-                f"{agent_hint}が決定事項を共有。{thought}。"
-                f"担当:{agent_hint} 期限:今週末"
-            )
+            payload = {
+                "diverge": f"{agent_hint}視点で代替案を点検し、{thought}課題を補強", 
+                "learn": f"得た知見として{thought}の影響を共有", 
+                "converge": f"{agent_hint}と合意した具体策を整理", 
+                "next_goal": "安全検証と指標設計を次の焦点にする",
+            }
+            return json.dumps(payload, ensure_ascii=False)
 
         if "議事要約アシスタント" in system:
             cleaned = last_msg.replace("\n", " / ")
@@ -96,11 +101,25 @@ class DeterministicLLMBackend(LLMBackend):
         # 旧フローや残課題フェーズ等の一般プロンプト
         if "会話ルール" in system or "会議ルール" in system:
             name = self._extract_name_from_system(system)
-            focus = "安全" if name.endswith("e") else "手順"
-            return f"{name}提案: {focus}を決定。担当:{name} 期限:今週"
+            focus = "安全性" if name.endswith("e") else "手順精度"
+            payload = {
+                "diverge": f"{name}視点で代替手段を比較し、{focus}の課題を洗い出す", 
+                "learn": f"試行から得た{focus}の知見を共有", 
+                "converge": f"実行案として{focus}を確定", 
+                "next_goal": "検証計画とKPI測定を整える", 
+            }
+            return json.dumps(payload, ensure_ascii=False)
 
         # デフォルトのフォールバック
-        return "補足案: KPI を継続確認"
+        return json.dumps(
+            {
+                "diverge": "代替視点を検討し、KPI改善余地を探る",
+                "learn": "現状の測定結果から得た気づきを共有",
+                "converge": "実施案として優先順位を明確化",
+                "next_goal": "次のレビューで改善効果を検証する",
+            },
+            ensure_ascii=False,
+        )
 
     @staticmethod
     def _extract_name_from_system(system: str) -> str:

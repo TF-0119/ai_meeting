@@ -40,8 +40,11 @@ def test_agent_prompt_includes_last_turn_context(tmp_path, monkeypatch, last_sum
 
     req = meeting._agent_prompt(agent, last_summary)
 
-    # システムプロンプトに新しい会議ルールが含まれること
-    assert "直前の発言（発言者名と要約）に対して具体的に応答する。" in req.system
+    # システムプロンプトがJSON形式と禁止語回避を指示していること
+    assert "出力形式: 下記キーを持つ JSON オブジェクトのみを返す。" in req.system
+    assert '{"diverge": "...", "learn": "...", "converge": "...", "next_goal": "..."}' in req.system
+    assert "禁止語（見出し、箇条書き、コードブロック、絵文字、メタ言及）" in req.system
+    assert "次に誰が何をするべきか" not in req.system
 
     # prior_msgs の先頭に直前発言のコンテキストが入ること
     assert req.messages[0]["content"].startswith("前回の発言者: Bob")
