@@ -118,9 +118,10 @@ def test_run_emits_cycle_payload_in_think_mode(tmp_path, monkeypatch):
     payload = json.loads(meeting.history[0].content)
 
     assert payload["cycle"] == 1
-    assert payload["assumptions"] == []
-    assert payload["links"] == []
-    assert "見出し" not in payload["diverge"]
-    assert "箇条書き" not in payload["converge"]
+    assert isinstance(payload["diverge"], list)
+    assert payload["diverge"] and "見出し" not in payload["diverge"][0].get("hypothesis", "")
+    assert all("箇条書き" not in entry.get("commit", "") for entry in payload.get("converge", []))
+    assert isinstance(payload["learn"], list)
+    assert all(isinstance(entry.get("links", []), list) for entry in payload["learn"])
     assert payload["next_goal"].endswith("ゴール")
     assert "見出し" not in payload["next_goal"]
