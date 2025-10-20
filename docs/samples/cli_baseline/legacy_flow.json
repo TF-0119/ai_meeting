@@ -5,7 +5,7 @@
       "round": 1,
       "turn": 1,
       "speaker": "Alice",
-      "content": "{\"cycle\": 1, \"diverge\": \"テーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(ASSERTIVE): 意思決定を急ぎ、明確な行動を求める推進役。\", \"learn\": \"\", \"converge\": \"改善案: 手順・安全・得点方法を明記\", \"next_goal\": \"\", \"assumptions\": [], \"links\": []}",
+      "content": "{\"cycle\": 1, \"diverge\": [{\"hypothesis\": \"テーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(ASSERTIVE): 意思決定を急ぎ、明確な行動を求める推進役。\", \"assumptions\": []}], \"learn\": [], \"converge\": [{\"commit\": \"改善案: 手順・安全・得点方法を明記\", \"reason\": \"\"}], \"next_goal\": \"\"}",
       "phase": {
         "id": 0,
         "turn": 1,
@@ -29,7 +29,7 @@
       "round": 2,
       "turn": 2,
       "speaker": "Bob",
-      "content": "{\"cycle\": 2, \"diverge\": \"前回の発言者: Alice\\n発言要約: 改善案: 手順・安全・得点方法を明記\\n前ラウンド要約:\\n- 差分: 改善案: 手順・安全・得点方法を明記\\nテーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(EMPATHIC): 相手の感情と懸念をすくい上げ、協調的な合意形成を促す支援役。\\n- Aliceの発言: 差分: 改善案: 手順・安全・得点方法を明記\", \"learn\": \"- 差分: 改善案: 手順・安全・得点方法を明記\\n- 差分: 改善案: 手順・安全・得点方法を明記\", \"converge\": \"改善案: 手順・安全・得点方法を明記\", \"next_goal\": \"\", \"assumptions\": [], \"links\": []}",
+      "content": "{\"cycle\": 2, \"diverge\": [{\"hypothesis\": \"前回の発言者: Alice\\n発言要約: 改善案: 手順・安全・得点方法を明記\\n前ラウンド要約:\\n- 差分: 改善案: 手順・安全・得点方法を明記\\nテーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(EMPATHIC): 相手の感情と懸念をすくい上げ、協調的な合意形成を促す支援役。\\n- Aliceの発言: 差分: 改善案: 手順・安全・得点方法を明記\", \"assumptions\": []}], \"learn\": [{\"insight\": \"差分: 改善案: 手順・安全・得点方法を明記\", \"why\": \"\", \"links\": []}, {\"insight\": \"差分: 改善案: 手順・安全・得点方法を明記\", \"why\": \"\", \"links\": []}], \"converge\": [{\"commit\": \"改善案: 手順・安全・得点方法を明記\", \"reason\": \"\"}], \"next_goal\": \"\"}",
       "phase": {
         "id": 0,
         "turn": 2,
@@ -50,9 +50,15 @@
     },
     {
       "type": "final",
-      "final": "合意事項:\n- 空間を活かす新スポーツを実証する\n- 用具の安全確保と得点管理を両立\n残課題:\n- 動作手順の動画化で理解を補強\n直近アクション:\n- 担当:Alice が安全テストを実施 (期限:来週)\n- 担当:Bob がKPI測定を設計 (期限:来月)"
+      "final": "合意事項:\n- 空間を活かす新スポーツを実証する\n- 用具の安全確保と得点管理を両立\n残課題:\n- 動作手順の動画化で理解を補強\n直近アクション:\n- Alice が安全テストの検証案を整備\n- Bob がKPI測定の設計案を仕上げる"
     }
   ],
+  "kpi": {
+    "progress": 0.0,
+    "diversity": 0.548,
+    "decision_density": 1.0,
+    "spec_coverage": 1.0
+  },
   "meeting_result": {
     "topic": "E2E旧フロー",
     "precision": 4,
@@ -80,12 +86,12 @@
     "turns": [
       {
         "speaker": "Alice",
-        "content": "{\"cycle\": 1, \"diverge\": \"テーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(ASSERTIVE): 意思決定を急ぎ、明確な行動を求める推進役。\", \"learn\": \"\", \"converge\": \"改善案: 手順・安全・得点方法を明記\", \"next_goal\": \"\", \"assumptions\": [], \"links\": []}",
+        "content": "{\"cycle\": 1, \"diverge\": [{\"hypothesis\": \"テーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(ASSERTIVE): 意思決定を急ぎ、明確な行動を求める推進役。\", \"assumptions\": []}], \"learn\": [], \"converge\": [{\"commit\": \"改善案: 手順・安全・得点方法を明記\", \"reason\": \"\"}], \"next_goal\": \"\"}",
         "meta": {}
       },
       {
         "speaker": "Bob",
-        "content": "{\"cycle\": 2, \"diverge\": \"前回の発言者: Alice\\n発言要約: 改善案: 手順・安全・得点方法を明記\\n前ラウンド要約:\\n- 差分: 改善案: 手順・安全・得点方法を明記\\nテーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(EMPATHIC): 相手の感情と懸念をすくい上げ、協調的な合意形成を促す支援役。\\n- Aliceの発言: 差分: 改善案: 手順・安全・得点方法を明記\", \"learn\": \"- 差分: 改善案: 手順・安全・得点方法を明記\\n- 差分: 改善案: 手順・安全・得点方法を明記\", \"converge\": \"改善案: 手順・安全・得点方法を明記\", \"next_goal\": \"\", \"assumptions\": [], \"links\": []}",
+        "content": "{\"cycle\": 2, \"diverge\": [{\"hypothesis\": \"前回の発言者: Alice\\n発言要約: 改善案: 手順・安全・得点方法を明記\\n前ラウンド要約:\\n- 差分: 改善案: 手順・安全・得点方法を明記\\nテーマ再掲: E2E旧フロー\\n最近の覚書:\\n- 個性プロファイル(EMPATHIC): 相手の感情と懸念をすくい上げ、協調的な合意形成を促す支援役。\\n- Aliceの発言: 差分: 改善案: 手順・安全・得点方法を明記\", \"assumptions\": []}], \"learn\": [{\"insight\": \"差分: 改善案: 手順・安全・得点方法を明記\", \"why\": \"\", \"links\": []}, {\"insight\": \"差分: 改善案: 手順・安全・得点方法を明記\", \"why\": \"\", \"links\": []}], \"converge\": [{\"commit\": \"改善案: 手順・安全・得点方法を明記\", \"reason\": \"\"}], \"next_goal\": \"\"}",
         "meta": {}
       }
     ],
@@ -108,10 +114,10 @@
         "legacy_round_base": 0
       }
     ],
-    "final": "合意事項:\n- 空間を活かす新スポーツを実証する\n- 用具の安全確保と得点管理を両立\n残課題:\n- 動作手順の動画化で理解を補強\n直近アクション:\n- 担当:Alice が安全テストを実施 (期限:来週)\n- 担当:Bob がKPI測定を設計 (期限:来月)",
+    "final": "合意事項:\n- 空間を活かす新スポーツを実証する\n- 用具の安全確保と得点管理を両立\n残課題:\n- 動作手順の動画化で理解を補強\n直近アクション:\n- Alice が安全テストの検証案を整備\n- Bob がKPI測定の設計案を仕上げる",
     "kpi": {
       "progress": 0.0,
-      "diversity": 0.538,
+      "diversity": 0.548,
       "decision_density": 1.0,
       "spec_coverage": 1.0
     },
@@ -127,11 +133,5 @@
       "metrics_cpu_mem_png": "metrics_cpu_mem.png",
       "metrics_gpu_png": "metrics_gpu.png"
     }
-  },
-  "kpi": {
-    "progress": 0.0,
-    "diversity": 0.538,
-    "decision_density": 1.0,
-    "spec_coverage": 1.0
   }
 }
