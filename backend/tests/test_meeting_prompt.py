@@ -42,8 +42,8 @@ def test_agent_prompt_includes_last_turn_context(tmp_path, monkeypatch, last_sum
 
     # システムプロンプトがJSON形式と禁止語回避を指示していること
     assert "出力形式: 下記キーを持つ JSON オブジェクトのみを返す。" in req.system
-    assert '{"diverge": "...", "learn": "...", "converge": "...", "next_goal": "..."}' in req.system
-    assert "禁止語（見出し、箇条書き、コードブロック、絵文字、メタ言及）" in req.system
+    assert '{"diverge": [{"hypothesis": "...", "assumptions": []}], "learn": [{"insight": "...", "why": "...", "links": []}], "converge": [{"commit": "...", "reason": "..."}], "next_goal": "..."}' in req.system
+    assert "禁止語（見出し、箇条書き、コードブロック、絵文字、メタ言及、締切、担当、期限）" in req.system
     assert "次に誰が何をするべきか" not in req.system
 
     # prior_msgs の先頭に直前発言のコンテキストが入ること

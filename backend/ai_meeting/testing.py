@@ -65,9 +65,25 @@ class DeterministicLLMBackend(LLMBackend):
                 thought = thought.replace(term, "")
             agent_hint = self.agent_names[(self._judge_calls - 1) % len(self.agent_names)]
             payload = {
-                "diverge": f"{agent_hint}視点で代替案を点検し、{thought}課題を補強", 
-                "learn": f"得た知見として{thought}の影響を共有", 
-                "converge": f"{agent_hint}と合意した具体策を整理", 
+                "diverge": [
+                    {
+                        "hypothesis": f"{agent_hint}視点で代替案を点検し、{thought}課題を補強",
+                        "assumptions": [],
+                    }
+                ],
+                "learn": [
+                    {
+                        "insight": f"得た知見として{thought}の影響を共有",
+                        "why": "前提の妥当性を確認",
+                        "links": [],
+                    }
+                ],
+                "converge": [
+                    {
+                        "commit": f"{agent_hint}と合意した具体策を整理",
+                        "reason": "検証結果が整合",
+                    }
+                ],
                 "next_goal": "安全検証と指標設計を次の焦点にする",
             }
             return json.dumps(payload, ensure_ascii=False)
@@ -94,8 +110,8 @@ class DeterministicLLMBackend(LLMBackend):
                 "残課題:\n"
                 "- 動作手順の動画化で理解を補強\n"
                 "直近アクション:\n"
-                "- 担当:Alice が安全テストを実施 (期限:来週)\n"
-                "- 担当:Bob がKPI測定を設計 (期限:来月)"
+                "- Alice が安全テストの検証案を整備\n"
+                "- Bob がKPI測定の設計案を仕上げる"
             )
 
         # 旧フローや残課題フェーズ等の一般プロンプト
@@ -103,19 +119,51 @@ class DeterministicLLMBackend(LLMBackend):
             name = self._extract_name_from_system(system)
             focus = "安全性" if name.endswith("e") else "手順精度"
             payload = {
-                "diverge": f"{name}視点で代替手段を比較し、{focus}の課題を洗い出す", 
-                "learn": f"試行から得た{focus}の知見を共有", 
-                "converge": f"実行案として{focus}を確定", 
-                "next_goal": "検証計画とKPI測定を整える", 
+                "diverge": [
+                    {
+                        "hypothesis": f"{name}視点で代替手段を比較し、{focus}の課題を洗い出す",
+                        "assumptions": [],
+                    }
+                ],
+                "learn": [
+                    {
+                        "insight": f"試行から得た{focus}の知見を共有",
+                        "why": "再現性を確認",
+                        "links": [],
+                    }
+                ],
+                "converge": [
+                    {
+                        "commit": f"実行案として{focus}を確定",
+                        "reason": "参加者の合意が得られた",
+                    }
+                ],
+                "next_goal": "検証計画と評価指標を整える",
             }
             return json.dumps(payload, ensure_ascii=False)
 
         # デフォルトのフォールバック
         return json.dumps(
             {
-                "diverge": "代替視点を検討し、KPI改善余地を探る",
-                "learn": "現状の測定結果から得た気づきを共有",
-                "converge": "実施案として優先順位を明確化",
+                "diverge": [
+                    {
+                        "hypothesis": "代替視点を検討し、KPI改善余地を探る",
+                        "assumptions": [],
+                    }
+                ],
+                "learn": [
+                    {
+                        "insight": "現状の測定結果から得た気づきを共有",
+                        "why": "観測値の根拠を整理",
+                        "links": [],
+                    }
+                ],
+                "converge": [
+                    {
+                        "commit": "実施案として優先順位を明確化",
+                        "reason": "想定外のリスクがない",
+                    }
+                ],
                 "next_goal": "次のレビューで改善効果を検証する",
             },
             ensure_ascii=False,
