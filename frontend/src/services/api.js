@@ -20,6 +20,24 @@ export async function fetchJSONL(url) {
     .filter(Boolean);
 }
 
+// バックエンドのヘルスチェック。成功時は ok=true を返す。
+export async function getHealth() {
+  try {
+    const res = await fetch(withCacheBuster("/health"), { cache: "no-store" });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      const message = text.trim() || `HTTP ${res.status}`;
+      return { status: "error", ok: false, message };
+    }
+    const payload = await res.json().catch(() => ({}));
+    const ok = payload?.ok !== false;
+    return { status: "ready", ok, message: ok ? "" : "バックエンドからエラーが返されました。", detail: payload };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "ヘルスチェックに失敗しました。";
+    return { status: "error", ok: false, message };
+  }
+}
+
 function parseLiveRows(rows) {
   const timeline = [];
   let latestSummary = "";
