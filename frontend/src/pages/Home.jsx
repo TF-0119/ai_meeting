@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getModels, startMeeting } from "../services/api";
 import { loadHomePreset, saveHomePreset } from "../services/presets";
+import FieldError from "../components/FieldError";
 
 const INITIAL_FORM_STATE = {
   topic: "",
@@ -77,6 +78,70 @@ const TEMPLATE_DEFINITIONS = [
   },
 ];
 
+const PRECISION_BOUNDS = { min: 1, max: 10 };
+const MAX_PHASES_BOUNDS = { min: 1, max: 10 };
+const CHAT_SENTENCE_BOUNDS = { min: 1, max: 6 };
+const PHASE_TURN_BOUNDS = { min: 1, max: 12 };
+
+function validateTopicValue(value) {
+  return value.trim() ? "" : "テーマを入力してください。";
+}
+
+function parseBoundedInteger(value, label, bounds) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
+    return { value: undefined, error: `${label}は整数で入力してください。` };
+  }
+  if (typeof bounds.min === "number" && numeric < bounds.min) {
+    return { value: undefined, error: `${label}は${bounds.min}以上で入力してください。` };
+  }
+  if (typeof bounds.max === "number" && numeric > bounds.max) {
+    return { value: undefined, error: `${label}は${bounds.max}以下で入力してください。` };
+  }
+  return { value: numeric, error: "" };
+}
+
+function evaluatePrecision(value) {
+  return parseBoundedInteger(value, "精密度", PRECISION_BOUNDS);
+}
+
+function evaluateOptionalBoundedInteger(value, label, bounds) {
+  if (typeof value !== "string" || value.trim() === "") {
+    return { value: undefined, error: "" };
+  }
+  return parseBoundedInteger(value, label, bounds);
+}
+
+function evaluatePhaseTurnLimit(value) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed) {
+    return { tokens: [], error: "" };
+  }
+  const tokens = trimmed.split(/[\s,]+/).filter(Boolean);
+  const normalized = [];
+  for (const token of tokens) {
+    if (token.includes("=")) {
+      const [nameRaw, countRaw] = token.split("=", 2);
+      const name = (nameRaw ?? "").trim();
+      if (!name) {
+        return { tokens: [], error: "フェーズターン上限のキーが空です。" };
+      }
+      const { value: numeric, error } = parseBoundedInteger(countRaw, "フェーズターン上限", PHASE_TURN_BOUNDS);
+      if (error) {
+        return { tokens: [], error };
+      }
+      normalized.push(`${name}=${numeric}`);
+      continue;
+    }
+    const { value: numeric, error } = parseBoundedInteger(token, "フェーズターン上限", PHASE_TURN_BOUNDS);
+    if (error) {
+      return { tokens: [], error };
+    }
+    normalized.push(numeric);
+  }
+  return { tokens: normalized, error: "" };
+}
+
 export default function Home() {
   const nav = useNavigate();
   const openaiConfigured = useMemo(() => Boolean(import.meta.env.VITE_OPENAI_API_KEY), []);
@@ -129,7 +194,27 @@ export default function Home() {
   const [selectedTemplate, setSelectedTemplate] = useState(TEMPLATE_DEFINITIONS[0].value);
   const [hasSavedPreset, setHasSavedPreset] = useState(false);
   const [presetStatus, setPresetStatus] = useState("");
+  const [errors, setErrors] = useState({});
+  const [touchedFields, setTouchedFields] = useState({});
+  const [precisionValue, setPrecisionValue] = useState(5);
+  const [phaseTurnLimitTokens, setPhaseTurnLimitTokens] = useState([]);
+  const [maxPhasesValue, setMaxPhasesValue] = useState(undefined);
+  const [chatMaxSentencesValue, setChatMaxSentencesValue] = useState(undefined);
+  const [agentsValue, setAgentsValue] = useState("");
+  const [liveMessage, setLiveMessage] = useState("");
   const presetStatusTimer = useRef(null);
+
+  const updateError = useCallback((field, message) => {
+    setErrors((prev) => {
+      const next = { ...prev };
+      if (message) {
+        next[field] = message;
+      } else {
+        delete next[field];
+      }
+      return next;
+    });
+  }, []);
 
   const showPresetStatus = (message) => {
     setPresetStatus(message);
@@ -293,6 +378,23 @@ export default function Home() {
       status: advancedConfigSet ? "調整済み" : "既定を使用",
     },
   ];
+  const hasErrors = Object.keys(errors).length > 0;
+  const topicErrorId = "home-topic-error";
+  const topicHintId = "home-topic-hint";
+  const precisionErrorId = "home-precision-error";
+  const backendHintId = "home-backend-hint";
+  const backendErrorId = "home-backend-error";
+  const modelErrorId = "home-model-error";
+  const modelHintBaseId = "home-model-hint";
+  const phaseTurnLimitHintId = "home-phase-turn-hint";
+  const phaseTurnLimitErrorId = "home-phase-turn-error";
+  const maxPhasesHintId = "home-max-phases-hint";
+  const maxPhasesErrorId = "home-max-phases-error";
+  const chatModeHintId = "home-chat-mode-hint";
+  const chatMaxHintId = "home-chat-max-hint";
+  const chatMaxErrorId = "home-chat-max-error";
+  const participantsHintId = "home-participants-hint";
+  const participantsErrorId = "home-participants-error";
 
   useEffect(() => {
     let ignore = false;
@@ -332,72 +434,103 @@ export default function Home() {
     setHasSavedPreset(true);
   }, [formState, participants, presetLoaded]);
 
+  useEffect(() => {
+    const { value, error: precisionError } = evaluatePrecision(formState.precision ?? "");
+    setPrecisionValue(typeof value === "number" ? value : undefined);
+    updateError("precision", precisionError);
+  }, [formState.precision, updateError]);
+
+  useEffect(() => {
+    const { tokens, error } = evaluatePhaseTurnLimit(formState.phaseTurnLimit ?? "");
+    setPhaseTurnLimitTokens(tokens);
+    updateError("phaseTurnLimit", error);
+  }, [formState.phaseTurnLimit, updateError]);
+
+  useEffect(() => {
+    const { value, error } = evaluateOptionalBoundedInteger(
+      formState.maxPhases,
+      "フェーズ数の上限",
+      MAX_PHASES_BOUNDS,
+    );
+    setMaxPhasesValue(typeof value === "number" ? value : undefined);
+    updateError("maxPhases", error);
+  }, [formState.maxPhases, updateError]);
+
+  useEffect(() => {
+    const { value, error } = evaluateOptionalBoundedInteger(
+      formState.chatMaxSentences,
+      "チャット最大文数",
+      CHAT_SENTENCE_BOUNDS,
+    );
+    setChatMaxSentencesValue(typeof value === "number" ? value : undefined);
+    updateError("chatMaxSentences", error);
+  }, [formState.chatMaxSentences, updateError]);
+
+  useEffect(() => {
+    const value = buildAgentsString(participants);
+    setAgentsValue(value);
+    updateError("participants", value ? "" : "参加者を1人以上設定してください。");
+  }, [participants, updateError]);
+
+  const topicTouched = touchedFields.topic;
+
+  useEffect(() => {
+    if (!topicTouched) return;
+    updateError("topic", validateTopicValue(formState.topic));
+  }, [formState.topic, topicTouched, updateError]);
+
+  useEffect(() => {
+    setLiveMessage(error);
+  }, [error]);
+
+  const handleFieldBlur = useCallback(
+    (field) => {
+      setTouchedFields((prev) => (prev[field] ? prev : { ...prev, [field]: true }));
+      if (field === "topic") {
+        updateError(field, validateTopicValue(formState.topic));
+      }
+    },
+    [formState.topic, updateError],
+  );
+
+  const combineFieldDescriptors = useCallback((...ids) => {
+    return ids.filter(Boolean).join(" ") || undefined;
+  }, []);
+
   const onSubmit = async (e) => {
     e.preventDefault();
     if (loading) return;
     setError("");
+    const submissionErrors = { ...errors };
+    const topicError = validateTopicValue(formState.topic);
+    if (topicError) {
+      submissionErrors.topic = topicError;
+    } else {
+      delete submissionErrors.topic;
+    }
+    const finalAgentsValue = agentsValue || buildAgentsString(participants);
+    if (!finalAgentsValue) {
+      submissionErrors.participants = "参加者を1人以上設定してください。";
+    } else {
+      delete submissionErrors.participants;
+    }
+    if (Object.keys(submissionErrors).length > 0) {
+      setErrors(submissionErrors);
+      setTouchedFields((prev) => ({ ...prev, topic: true, participants: true }));
+      const message = "入力内容を確認してください。";
+      setError(message);
+      setLiveMessage(message);
+      return;
+    }
     setLoading(true);
     try {
       const trimmedTopic = formState.topic.trim();
-      if (!trimmedTopic) {
-        throw new Error("テーマを入力してください。");
-      }
-      const precisionValueRaw = Number(formState.precision);
-      const precisionValue = Number.isFinite(precisionValueRaw) ? precisionValueRaw : undefined;
-      const finalAgentsValue = buildAgentsString(participants);
-      if (!finalAgentsValue) {
-        throw new Error("参加者を1人以上設定してください。");
-      }
       const backendTrimmed = formState.backend.trim();
       const modelTrimmed = formState.model.trim();
-      const maxPhasesTrimmed = formState.maxPhases.trim();
-      const chatMaxSentencesTrimmed = formState.chatMaxSentences.trim();
-
-      const parseBoundedInt = (value, label, { min, max }) => {
-        const numeric = Number(value);
-        if (!Number.isFinite(numeric) || !Number.isInteger(numeric)) {
-          throw new Error(`${label}は整数で入力してください。`);
-        }
-        if (typeof min === "number" && numeric < min) {
-          throw new Error(`${label}は${min}以上で入力してください。`);
-        }
-        if (typeof max === "number" && numeric > max) {
-          throw new Error(`${label}は${max}以下で入力してください。`);
-        }
-        return numeric;
-      };
-
-      const parsePhaseTurnLimit = (value) => {
-        const trimmed = value.trim();
-        if (!trimmed) return [];
-        const tokens = trimmed.split(/[\s,]+/).filter(Boolean);
-        if (!tokens.length) return [];
-        return tokens.map((token) => {
-          if (token.includes("=")) {
-            const [nameRaw, numRaw] = token.split("=", 2);
-            const name = nameRaw.trim();
-            if (!name) {
-              throw new Error("フェーズターン上限のキーが空です。");
-            }
-            const numeric = parseBoundedInt(numRaw, "フェーズターン上限", { min: 1, max: 12 });
-            return `${name}=${numeric}`;
-          }
-          const numeric = parseBoundedInt(token, "フェーズターン上限", { min: 1, max: 12 });
-          return numeric;
-        });
-      };
-
-      const phaseTurnLimitTokens = parsePhaseTurnLimit(formState.phaseTurnLimit ?? "");
-      const maxPhasesValue = maxPhasesTrimmed
-        ? parseBoundedInt(maxPhasesTrimmed, "フェーズ数の上限", { min: 1, max: 10 })
-        : undefined;
-      const chatMaxSentencesValue = chatMaxSentencesTrimmed
-        ? parseBoundedInt(chatMaxSentencesTrimmed, "チャット最大文数", { min: 1, max: 6 })
-        : undefined;
 
       const payload = {
         topic: trimmedTopic,
-        precision: precisionValue,
+        precision: typeof precisionValue === "number" ? precisionValue : undefined,
         agents: finalAgentsValue,
         backend: backendTrimmed || undefined,
       };
@@ -510,55 +643,109 @@ export default function Home() {
             isOpen={expandedStep === "basic"}
             onToggle={() => handleStepToggle("basic")}
           >
-            <label className="label">
-              テーマ
+            <label
+              className={`label${errors.topic ? " has-error" : ""}`}
+              htmlFor="home-topic"
+            >
+              <span className="label-title">テーマ</span>
               <input
-                className="input"
+                id="home-topic"
+                className={`input${errors.topic ? " is-error" : ""}`}
                 value={formState.topic}
                 onChange={(e) => dispatch({ type: "update", field: "topic", value: e.target.value })}
+                onBlur={() => handleFieldBlur("topic")}
                 placeholder="例: 10分で遊べる1畳スポーツの仕様"
                 required
+                aria-invalid={errors.topic ? "true" : "false"}
+                aria-describedby={combineFieldDescriptors(
+                  topicHintId,
+                  errors.topic ? topicErrorId : null,
+                )}
               />
+              <FieldError id={topicErrorId} message={errors.topic} />
+              <div id={topicHintId} className="hint">
+                会議のテーマを入力してください。
+              </div>
             </label>
             <div className="grid-2 step-grid">
-              <label className="label">
-                精密度 (1-10)
+              <label
+                className={`label${errors.precision ? " has-error" : ""}`}
+                htmlFor="home-precision"
+              >
+                <span className="label-title">精密度 (1-10)</span>
                 <div className="slider-control">
                   <input
-                    className="range-input"
+                    id="home-precision"
+                    className={`range-input${errors.precision ? " is-error" : ""}`}
                     type="range"
                     min={1}
                     max={10}
                     step={1}
                     value={formState.precision}
                     onChange={(e) => dispatch({ type: "update", field: "precision", value: e.target.value })}
+                    aria-invalid={errors.precision ? "true" : "false"}
+                    aria-describedby={combineFieldDescriptors(
+                      errors.precision ? precisionErrorId : null,
+                    )}
                   />
-                  <span className="slider-value">{formState.precision}</span>
+                  <span className="slider-value" id="home-precision-value">
+                    {formState.precision}
+                  </span>
                 </div>
+                <FieldError id={precisionErrorId} message={errors.precision} />
               </label>
-              <label className="label">
-                バックエンド
+              <label
+                className={`label${formState.openaiKeyRequired ? " has-error" : ""}`}
+                htmlFor="home-backend"
+              >
+                <span className="label-title">バックエンド</span>
                 <select
-                  className="select"
+                  id="home-backend"
+                  className={`select${formState.openaiKeyRequired ? " is-error" : ""}`}
                   value={formState.backend}
                   onChange={(e) => dispatch({ type: "setBackend", value: e.target.value, openaiConfigured })}
+                  aria-invalid={formState.openaiKeyRequired ? "true" : "false"}
+                  aria-describedby={combineFieldDescriptors(
+                    backendHintId,
+                    formState.openaiKeyRequired ? backendErrorId : null,
+                  )}
                 >
                   <option value="ollama">Ollama (ローカル)</option>
                   <option value="openai">OpenAI API</option>
                 </select>
-                <div className="hint">利用するLLMサービスを選択します。</div>
-                {formState.openaiKeyRequired && (
-                  <div className="hint error">OpenAI バックエンドを利用するには環境変数 VITE_OPENAI_API_KEY を設定してください。</div>
-                )}
+                <FieldError
+                  id={backendErrorId}
+                  message={
+                    formState.openaiKeyRequired
+                      ? "OpenAI バックエンドを利用するには環境変数 VITE_OPENAI_API_KEY を設定してください。"
+                      : ""
+                  }
+                />
+                <div id={backendHintId} className="hint">
+                  利用するLLMサービスを選択します。
+                </div>
               </label>
             </div>
-            <label className="label">
-              モデル
+            <label
+              className={`label${modelsError ? " has-error" : ""}`}
+              htmlFor="home-model"
+            >
+              <span className="label-title">モデル</span>
               <select
-                className="select"
+                id="home-model"
+                className={`select${modelsError ? " is-error" : ""}`}
                 value={formState.model}
                 onChange={(e) => dispatch({ type: "setModel", value: e.target.value })}
                 disabled={formState.backend === "ollama" && modelOptions.length === 0}
+                aria-invalid={modelsError ? "true" : "false"}
+                aria-describedby={combineFieldDescriptors(
+                  modelsError ? modelErrorId : null,
+                  formState.backend === "ollama" && !modelsError
+                    ? `${modelHintBaseId}-ollama`
+                    : formState.backend === "openai"
+                    ? `${modelHintBaseId}-openai`
+                    : null,
+                )}
               >
                 <option value="">自動（バックエンド既定）</option>
                 {(formState.backend === "openai" ? OPENAI_MODEL_CHOICES : modelOptions).map((name) => (
@@ -567,14 +754,16 @@ export default function Home() {
                   </option>
                 ))}
               </select>
-              {formState.backend === "ollama" && modelsError && (
-                <div className="hint error">{modelsError}</div>
-              )}
+              <FieldError id={modelErrorId} message={modelsError} />
               {formState.backend === "ollama" && !modelsError && (
-                <div className="hint">Ollama にインストール済みのモデル一覧から選択できます。</div>
+                <div id={`${modelHintBaseId}-ollama`} className="hint">
+                  Ollama にインストール済みのモデル一覧から選択できます。
+                </div>
               )}
               {formState.backend === "openai" && (
-                <div className="hint">OpenAI モデルは必要に応じて選択してください。未選択時は既定値を利用します。</div>
+                <div id={`${modelHintBaseId}-openai`} className="hint">
+                  OpenAI モデルは必要に応じて選択してください。未選択時は既定値を利用します。
+                </div>
               )}
             </label>
           </StepCard>
@@ -586,8 +775,17 @@ export default function Home() {
             isOpen={expandedStep === "participants"}
             onToggle={() => handleStepToggle("participants")}
           >
-            <div className="label participant-section">
-              <div className="participant-header">
+            <div
+              className={`label participant-section${errors.participants ? " has-error" : ""}`}
+              role="group"
+              aria-labelledby="home-participants-label"
+              aria-invalid={errors.participants ? "true" : "false"}
+              aria-describedby={combineFieldDescriptors(
+                participantsHintId,
+                errors.participants ? participantsErrorId : null,
+              )}
+            >
+              <div className="participant-header" id="home-participants-label">
                 <span>参加者リスト</span>
                 <button type="button" className="btn ghost participant-add" onClick={handleParticipantAdd}>
                   行を追加
@@ -599,7 +797,10 @@ export default function Home() {
                 onRemove={handleParticipantRemove}
                 onAdd={handleParticipantAdd}
               />
-              <div className="hint">各参加者の名前と任意のシステムプロンプトを設定できます。</div>
+              <FieldError id={participantsErrorId} message={errors.participants} />
+              <div id={participantsHintId} className="hint">
+                各参加者の名前と任意のシステムプロンプトを設定できます。
+              </div>
             </div>
           </StepCard>
 
@@ -611,29 +812,48 @@ export default function Home() {
             onToggle={() => handleStepToggle("advanced")}
           >
             <div className="advanced-grid">
-              <label className="label">
-                フェーズターン上限
+              <label
+                className={`label${errors.phaseTurnLimit ? " has-error" : ""}`}
+                htmlFor="home-phase-turn"
+              >
+                <span className="label-title">フェーズターン上限</span>
                 <input
-                  className="input"
+                  id="home-phase-turn"
+                  className={`input${errors.phaseTurnLimit ? " is-error" : ""}`}
                   value={formState.phaseTurnLimit}
                   onChange={(e) => dispatch({ type: "update", field: "phaseTurnLimit", value: e.target.value })}
                   placeholder="例: discussion=2 resolution=1"
+                  aria-invalid={errors.phaseTurnLimit ? "true" : "false"}
+                  aria-describedby={combineFieldDescriptors(
+                    phaseTurnLimitHintId,
+                    errors.phaseTurnLimit ? phaseTurnLimitErrorId : null,
+                  )}
                 />
-                <div className="hint">
+                <FieldError id={phaseTurnLimitErrorId} message={errors.phaseTurnLimit} />
+                <div id={phaseTurnLimitHintId} className="hint">
                   空白またはカンマで区切って複数指定できます。数値のみの場合は全フェーズ共通の上限になります。
                 </div>
               </label>
-              <label className="label">
-                フェーズ数の上限
+              <label
+                className={`label${errors.maxPhases ? " has-error" : ""}`}
+                htmlFor="home-max-phases"
+              >
+                <span className="label-title">フェーズ数の上限</span>
                 <div className="slider-control">
                   <input
-                    className="range-input"
+                    id="home-max-phases"
+                    className={`range-input${errors.maxPhases ? " is-error" : ""}`}
                     type="range"
                     min={1}
                     max={10}
                     step={1}
                     value={resolvedMaxPhasesValue}
                     onChange={(e) => dispatch({ type: "update", field: "maxPhases", value: e.target.value })}
+                    aria-invalid={errors.maxPhases ? "true" : "false"}
+                    aria-describedby={combineFieldDescriptors(
+                      maxPhasesHintId,
+                      errors.maxPhases ? maxPhasesErrorId : null,
+                    )}
                   />
                   <span className="slider-value">{formState.maxPhases || "未設定"}</span>
                   <button
@@ -645,31 +865,44 @@ export default function Home() {
                     クリア
                   </button>
                 </div>
-                <div className="hint">1〜10 の範囲で指定できます。空欄にすると自動判定に任せます。</div>
+                <FieldError id={maxPhasesErrorId} message={errors.maxPhases} />
+                <div id={maxPhasesHintId} className="hint">1〜10 の範囲で指定できます。空欄にすると自動判定に任せます。</div>
               </label>
               <div className="label advanced-chat-section">
                 <div className="advanced-chat-title">短文チャットモード</div>
-                <label className="advanced-chat-toggle">
+                <label className="advanced-chat-toggle" htmlFor="home-chat-mode">
                   <input
+                    id="home-chat-mode"
                     type="checkbox"
                     checked={formState.chatMode}
                     onChange={(e) => dispatch({ type: "update", field: "chatMode", value: e.target.checked })}
+                    aria-invalid="false"
+                    aria-describedby={chatModeHintId}
                   />
                   <span>短文チャットを有効にする</span>
                 </label>
-                <div className="hint">既定では有効です。オフにすると従来の長文モードで進行します。</div>
+                <div id={chatModeHintId} className="hint">既定では有効です。オフにすると従来の長文モードで進行します。</div>
               </div>
-              <label className="label">
-                チャット最大文数
+              <label
+                className={`label${errors.chatMaxSentences ? " has-error" : ""}`}
+                htmlFor="home-chat-max"
+              >
+                <span className="label-title">チャット最大文数</span>
                 <div className="slider-control">
                   <input
-                    className="range-input"
+                    id="home-chat-max"
+                    className={`range-input${errors.chatMaxSentences ? " is-error" : ""}`}
                     type="range"
                     min={1}
                     max={6}
                     step={1}
                     value={resolvedChatMaxSentencesValue}
                     onChange={(e) => dispatch({ type: "update", field: "chatMaxSentences", value: e.target.value })}
+                    aria-invalid={errors.chatMaxSentences ? "true" : "false"}
+                    aria-describedby={combineFieldDescriptors(
+                      chatMaxHintId,
+                      errors.chatMaxSentences ? chatMaxErrorId : null,
+                    )}
                   />
                   <span className="slider-value">{formState.chatMaxSentences || "既定 (2)"}</span>
                   <button
@@ -681,7 +914,8 @@ export default function Home() {
                     クリア
                   </button>
                 </div>
-                <div className="hint">1〜6 の範囲で設定できます。空欄なら既定値 2 を利用します。</div>
+                <FieldError id={chatMaxErrorId} message={errors.chatMaxSentences} />
+                <div id={chatMaxHintId} className="hint">1〜6 の範囲で設定できます。空欄なら既定値 2 を利用します。</div>
               </label>
             </div>
           </StepCard>
@@ -690,7 +924,7 @@ export default function Home() {
             <button
               className="btn"
               type="submit"
-              disabled={!formState.topic.trim() || loading || formState.openaiKeyRequired}
+              disabled={!formState.topic.trim() || loading || formState.openaiKeyRequired || hasErrors}
             >
               {loading ? "起動中..." : "会議を開始"}
             </button>
@@ -704,7 +938,10 @@ export default function Home() {
         </aside>
       </div>
 
-      {error && <div className="error" style={{ color: "#d00", marginTop: "1rem" }}>{error}</div>}
+      <div className="visually-hidden" aria-live="assertive" role="alert">
+        {liveMessage}
+      </div>
+      {error && <div className="form-submit-error">{error}</div>}
     </section>
   );
 }
