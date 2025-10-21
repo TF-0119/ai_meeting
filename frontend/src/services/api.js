@@ -192,9 +192,12 @@ export async function getMeetingStatusDetail(meetingId) {
     .find((text) => text.length > 0) ?? "";
 
   const isAlive = typeof status?.is_alive === "boolean" ? status.is_alive : false;
+  const snapshotHasResult = Boolean(
+    snapshot && typeof snapshot.final === "string" && snapshot.final.trim().length > 0,
+  );
   const hasResult = typeof status?.has_result === "boolean"
     ? status.has_result
-    : Boolean(snapshot?.resultReady);
+    : snapshotHasResult;
 
   return {
     is_alive: isAlive,

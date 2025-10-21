@@ -12,6 +12,7 @@ from uuid import uuid4
 import psutil
 import httpx, sys, os
 import subprocess, shlex, re, time, threading
+import json
 
 app = FastAPI(title="Local LLM Gateway")
 
@@ -466,6 +467,46 @@ def list_meetings():
             {"id": k, **v} for k, v in _processes.items()
         ]}
 
+# meeting_result.json の有効性を確認するヘルパー
+def _has_valid_meeting_result(path: Path) -> bool:
+    """meeting_result.json が空ファイル・不正ファイルではないか判定する。"""
+
+    if not path.exists() or not path.is_file():
+        return False
+
+    try:
+        if path.stat().st_size <= 0:
+            return False
+    except OSError:
+        return False
+
+    try:
+        with path.open("r", encoding="utf-8") as fp:
+            data = json.load(fp)
+    except (OSError, json.JSONDecodeError):
+        return False
+
+    if not isinstance(data, dict):
+        return False
+
+    final_text = data.get("final")
+    if isinstance(final_text, str) and final_text.strip():
+        return True
+
+    turns = data.get("turns")
+    if isinstance(turns, list) and turns:
+        return True
+
+    phases = data.get("phases")
+    if isinstance(phases, list) and phases:
+        return True
+
+    kpi = data.get("kpi")
+    if isinstance(kpi, dict) and kpi:
+        return True
+
+    return False
+
 # 単体の状態（超シンプル版）
 @app.get("/meetings/{mid}")
 def meeting_status(mid: str):
@@ -482,7 +523,7 @@ def meeting_status(mid: str):
     live = outdir / "meeting_live.jsonl"
     result = outdir / "meeting_result.json"
     exists_live = live.exists()
-    exists_result = result.exists()
+    exists_result = _has_valid_meeting_result(result)
     return {
         "ok": True,
         "id": mid,
