@@ -62,6 +62,46 @@ describe("Ongoing", () => {
     unmount();
   });
 
+  it("結果ファイルが未完成でも結果待ち状態を維持する", async () => {
+    const meetings = [
+      {
+        id: "20240101-000000_67890",
+        topic: "部分的な結果",
+        backend: "ollama",
+        started_at: "20240103-040506",
+        is_alive: false,
+        has_live: true,
+        has_result: false,
+      },
+    ];
+    const listMock = vi.spyOn(api, "listMeetings").mockResolvedValue(meetings);
+    const statusMock = vi.spyOn(api, "getMeetingStatusDetail").mockResolvedValue({
+      is_alive: false,
+      has_result: false,
+      summary: "最終出力を生成中です。",
+    });
+
+    const { container, unmount } = await renderOngoing();
+
+    await flushEffects();
+    await flushEffects();
+    await flushEffects();
+
+    expect(listMock).toHaveBeenCalledTimes(1);
+    expect(statusMock).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("部分的な結果");
+    expect(container.textContent).toContain("最終出力を生成中です。");
+
+    const resultBadge = container.querySelector(".meeting-status-badge--pending");
+    expect(resultBadge).not.toBeNull();
+    expect(resultBadge?.textContent).toContain("結果待ち");
+
+    const resultLink = container.querySelector('a[href="/result/20240101-000000_67890"]');
+    expect(resultLink).toBeNull();
+
+    unmount();
+  });
+
   it("会議が存在しない場合は空状態を表示する", async () => {
     const listMock = vi.spyOn(api, "listMeetings").mockResolvedValue([]);
 
