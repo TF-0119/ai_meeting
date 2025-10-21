@@ -38,7 +38,245 @@ export async function getHealth() {
   }
 }
 
-function parseLiveRows(rows) {
+function toOptionalString(value) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+  return null;
+}
+
+function toOptionalNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+  return null;
+}
+
+/**
+ * @typedef {Object} LiveLabeledEntity
+ * @property {string|null} id IDやスラッグなどの識別子。
+ * @property {string|null} name 正式名称。
+ * @property {string|null} label UI表示向けラベル。
+ * @property {string|null} kind 種別。
+ * @property {string|null} description 詳細説明。
+ * @property {string|null} icon 代表アイコン。
+ */
+
+function normalizeLabeledEntity(raw) {
+  if (!raw) return null;
+  if (typeof raw === "string") {
+    const text = raw.trim();
+    if (!text) return null;
+    return {
+      id: null,
+      name: text,
+      label: text,
+      kind: null,
+      description: null,
+      icon: null,
+    };
+  }
+  if (typeof raw !== "object") return null;
+
+  const idCandidate = raw.id ?? raw.slug ?? raw.code ?? raw.identifier ?? raw.intent_id ?? raw.flow_id;
+  const nameCandidate = raw.name ?? raw.title;
+  const labelCandidate = raw.label ?? raw.display ?? nameCandidate;
+  const kindCandidate = raw.kind ?? raw.type ?? raw.category;
+  const descCandidate = raw.description ?? raw.detail ?? raw.summary ?? raw.text;
+  const iconCandidate = raw.icon ?? raw.emoji ?? raw.avatar;
+
+  return {
+    id: toOptionalString(idCandidate),
+    name: toOptionalString(nameCandidate),
+    label: toOptionalString(labelCandidate),
+    kind: toOptionalString(kindCandidate),
+    description: toOptionalString(descCandidate),
+    icon: toOptionalString(iconCandidate),
+  };
+}
+
+/**
+ * @typedef {LiveLabeledEntity & {role: string|null}} LivePersona
+ */
+
+function normalizePersona(raw) {
+  const base = normalizeLabeledEntity(raw);
+  if (!base) return null;
+  if (typeof raw === "object" && raw !== null) {
+    const roleCandidate = raw.role ?? raw.persona ?? raw.archetype ?? raw.kind ?? raw.type;
+    const detailCandidate = raw.summary ?? raw.description ?? raw.detail ?? raw.about;
+    return {
+      ...base,
+      role: toOptionalString(roleCandidate),
+      description: toOptionalString(detailCandidate) ?? base.description,
+    };
+  }
+  return {
+    ...base,
+    role: null,
+  };
+}
+
+/**
+ * @typedef {Object} LivePhaseInfo
+ * @property {string|null} id フェーズID。
+ * @property {string|null} kind フェーズ種別。
+ * @property {string|null} name 名称。
+ * @property {string|null} label 表示ラベル。
+ * @property {number|null} turn 現在ターン（フェーズ内）。
+ * @property {number|null} total 想定ターン数/上限。
+ * @property {number|null} progress 進行率（0-1想定）。
+ * @property {string|null} status 状態。
+ * @property {number|null} ordinal 通番。
+ */
+
+function normalizePhase(rawPhase) {
+  if (!rawPhase) return null;
+  if (typeof rawPhase === "string") {
+    const text = rawPhase.trim();
+    if (!text) return null;
+    return {
+      id: text,
+      kind: null,
+      name: text,
+      label: text,
+      turn: null,
+      total: null,
+      progress: null,
+      status: null,
+      ordinal: null,
+    };
+  }
+  if (typeof rawPhase !== "object") return null;
+
+  const idCandidate = rawPhase.id ?? rawPhase.phase_id;
+  const kindCandidate = rawPhase.kind ?? rawPhase.type;
+  const nameCandidate = rawPhase.name ?? rawPhase.label;
+  const labelCandidate = rawPhase.label ?? rawPhase.name;
+  const turnCandidate = rawPhase.turn ?? rawPhase.current_turn ?? rawPhase.index ?? rawPhase.step;
+  const totalCandidate = rawPhase.total ?? rawPhase.turn_limit ?? rawPhase.count ?? rawPhase.steps;
+  const progressCandidate = rawPhase.progress ?? rawPhase.ratio ?? rawPhase.percent;
+  const statusCandidate = rawPhase.status ?? rawPhase.state;
+  const ordinalCandidate = rawPhase.ordinal ?? rawPhase.order ?? rawPhase.sequence;
+
+  return {
+    id: toOptionalString(idCandidate),
+    kind: toOptionalString(kindCandidate),
+    name: toOptionalString(nameCandidate),
+    label: toOptionalString(labelCandidate),
+    turn: toOptionalNumber(turnCandidate),
+    total: toOptionalNumber(totalCandidate),
+    progress: toOptionalNumber(progressCandidate),
+    status: toOptionalString(statusCandidate),
+    ordinal: toOptionalNumber(ordinalCandidate),
+  };
+}
+
+function clampRatio(value) {
+  if (typeof value !== "number" || Number.isNaN(value) || !Number.isFinite(value)) {
+    return null;
+  }
+  if (value <= 0) return 0;
+  if (value >= 1) return 1;
+  return value;
+}
+
+/**
+ * @typedef {Object} LiveProgressHint
+ * @property {number|null} ratio 0-1に正規化された進行率。算出不可なら null。
+ * @property {number|null} current 現在のステップ数。
+ * @property {number|null} total 全ステップ数。
+ */
+
+function deriveProgressHint(phase) {
+  if (!phase) return null;
+
+  const ratio = clampRatio(phase.progress ?? null);
+  const currentCandidate = phase.turn ?? phase.ordinal ?? null;
+  const total = typeof phase.total === "number" && Number.isFinite(phase.total)
+    ? phase.total
+    : null;
+
+  if (ratio !== null) {
+    return {
+      ratio,
+      current: typeof currentCandidate === "number" && Number.isFinite(currentCandidate)
+        ? currentCandidate
+        : null,
+      total,
+    };
+  }
+
+  const current = typeof currentCandidate === "number" && Number.isFinite(currentCandidate)
+    ? currentCandidate
+    : null;
+
+  if (current !== null && total !== null && total > 0) {
+    return {
+      ratio: clampRatio(current / total),
+      current,
+      total,
+    };
+  }
+
+  if (current !== null || total !== null) {
+    return {
+      ratio: null,
+      current,
+      total,
+    };
+  }
+
+  return null;
+}
+
+function pickIcon(row, persona) {
+  const fromRow = toOptionalString(row.icon);
+  if (fromRow) return fromRow;
+
+  if (row.intent && typeof row.intent === "object") {
+    const intentIcon = toOptionalString(row.intent.icon ?? row.intent.emoji ?? row.intent.avatar);
+    if (intentIcon) return intentIcon;
+  }
+
+  if (persona) {
+    const personaIcon = toOptionalString(persona.icon);
+    if (personaIcon) return personaIcon;
+  }
+
+  if (row.phase && typeof row.phase === "object") {
+    const phaseIcon = toOptionalString(row.phase.icon ?? row.phase.emoji ?? row.phase.badge);
+    if (phaseIcon) return phaseIcon;
+  }
+
+  return null;
+}
+
+/**
+ * @typedef {Object} LiveTimelineEntry
+ * @property {string|number} id 一意な識別子。欠損時は行番号を補う。
+ * @property {string} speaker 発話者名。
+ * @property {string} text 本文テキスト。
+ * @property {string|null} ts タイムスタンプ。
+ * @property {LivePhaseInfo|null} phase フェーズ情報。欠損時は null。
+ * @property {string|null} phaseId フェーズID。フェーズ情報が無ければ null。
+ * @property {string|null} phaseKind フェーズ種別。フェーズ情報が無ければ null。
+ * @property {LiveProgressHint|null} progressHint 進行度推定用ヒント。
+ * @property {LiveLabeledEntity|null} intent 話題意図。欠損時は null。
+ * @property {LiveLabeledEntity|null} flow 採用フロー。欠損時は null。
+ * @property {LivePersona|null} persona ペルソナ・キャラクタ情報。欠損時は null。
+ * @property {string|null} icon 表示用アイコン。欠損時は null。
+ */
+
+export function parseLiveRows(rows) {
   const timeline = [];
   let latestSummary = "";
   let latestFinal = "";
@@ -71,11 +309,28 @@ function parseLiveRows(rows) {
       return;
     }
 
+    const phase = normalizePhase(r.phase ?? r.stage ?? null);
+    const intent = normalizeLabeledEntity(r.intent ?? r.intent_info ?? r.intentSummary ?? null);
+    const flow = normalizeLabeledEntity(r.flow ?? r.flow_info ?? r.playbook ?? null);
+    const persona = normalizePersona(r.persona ?? r.profile ?? r.character ?? null);
+    const icon = pickIcon(r, persona);
+    const progressHint = deriveProgressHint(phase);
+    const phaseKind = phase?.kind ?? null;
+    const phaseId = phase?.id ?? null;
+
     timeline.push({
       id: r.id ?? r.index ?? r.turn ?? i + 1,
       speaker: r.speaker ?? r.role ?? r.agent ?? "unknown",
       text: r.text ?? r.message ?? r.content ?? "",
       ts: r.ts ?? r.time ?? r.timestamp ?? null,
+      phase,
+      phaseId,
+      phaseKind,
+      progressHint,
+      intent,
+      flow,
+      persona,
+      icon,
     });
   });
 
@@ -83,6 +338,10 @@ function parseLiveRows(rows) {
 }
 
 // meeting_live.jsonl → タイムライン配列に整形
+/**
+ * @param {string} meetingId
+ * @returns {Promise<LiveTimelineEntry[]>}
+ */
 export async function getTimeline(meetingId) {
   const url = `/logs/${meetingId}/meeting_live.jsonl`;
   try {
@@ -141,6 +400,18 @@ async function getKpi(meetingId) {
   return data;
 }
 
+/**
+ * @param {string} meetingId
+ * @returns {Promise<{
+ *   timeline: LiveTimelineEntry[],
+ *   summary: string,
+ *   kpi: any,
+ *   progress: number|null,
+ *   resultReady: boolean,
+ *   final: string,
+ *   topic: string,
+ * }>} ライブビューに必要な情報。
+ */
 export async function getLiveSnapshot(meetingId) {
   const url = `/logs/${meetingId}/meeting_live.jsonl`;
   let rows = [];
