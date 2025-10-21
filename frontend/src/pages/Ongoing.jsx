@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Card from "../components/Card";
-import { listMeetings } from "../services/api";
+import { listMeetings, getMeetingStatusDetail } from "../services/api";
 
-const REFRESH_INTERVAL_MS = 8000;
+const MEETING_REFRESH_INTERVAL_MS = 8000;
+const STATUS_REFRESH_INTERVAL_MS = 5000;
 
 function formatStartedAt(startedAt) {
   if (!startedAt) {
@@ -19,14 +20,11 @@ function formatStartedAt(startedAt) {
   return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
 }
 
-function renderStatusLabel(value, positive = "あり", negative = "なし") {
-  return value ? positive : negative;
-}
-
 export default function Ongoing() {
   const [meetings, setMeetings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [statusMap, setStatusMap] = useState({});
 
   useEffect(() => {
     let active = true;
@@ -55,13 +53,59 @@ export default function Ongoing() {
     fetchMeetings(true);
     const timerId = setInterval(() => {
       fetchMeetings(false);
-    }, REFRESH_INTERVAL_MS);
+    }, MEETING_REFRESH_INTERVAL_MS);
 
     return () => {
       active = false;
       clearInterval(timerId);
     };
   }, []);
+
+  useEffect(() => {
+    const validMeetings = meetings.filter((meeting) => Boolean(meeting?.id));
+    if (!validMeetings.length) {
+      setStatusMap({});
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const refreshStatuses = async () => {
+      const entries = await Promise.all(
+        validMeetings.map(async (meeting) => {
+          try {
+            const detail = await getMeetingStatusDetail(meeting.id);
+            return [meeting.id, detail];
+          } catch (_) {
+            return [meeting.id, {
+              is_alive: Boolean(meeting.is_alive),
+              has_result: Boolean(meeting.has_result),
+              summary: "",
+            }];
+          }
+        }),
+      );
+
+      if (cancelled) return;
+
+      const next = {};
+      entries.forEach(([id, detail]) => {
+        if (!id) return;
+        next[id] = detail;
+      });
+      setStatusMap(next);
+    };
+
+    refreshStatuses().catch(() => {});
+    const timerId = setInterval(() => {
+      refreshStatuses().catch(() => {});
+    }, STATUS_REFRESH_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timerId);
+    };
+  }, [meetings]);
 
   let content;
   if (isLoading) {
@@ -83,11 +127,35 @@ export default function Ongoing() {
       <ul className="meeting-list" aria-live="polite">
         {meetings.map((meeting) => {
           const title = meeting.topic?.trim() ? meeting.topic : "（トピック未設定）";
+          const status = statusMap[meeting.id] ?? {
+            is_alive: Boolean(meeting.is_alive),
+            has_result: Boolean(meeting.has_result),
+            summary: "",
+          };
+          const isAlive = Boolean(status.is_alive);
+          const hasResult = Boolean(status.has_result);
+          const summaryTextRaw = typeof status.summary === "string" ? status.summary.trim() : "";
+          const summaryText = summaryTextRaw || "サマリーはまだありません。";
+          const summaryClassName = `meeting-list__summary${summaryTextRaw ? "" : " meeting-list__summary--empty"}`;
+          const meetingUrl = `/meeting/${encodeURIComponent(meeting.id)}`;
+          const resultUrl = `/result/${encodeURIComponent(meeting.id)}`;
           return (
             <li key={meeting.id} className="meeting-list__item">
               <h2 className="meeting-list__title">
-                <Link to={`/meeting/${encodeURIComponent(meeting.id)}`}>{title}</Link>
+                <Link to={meetingUrl}>{title}</Link>
               </h2>
+              <div className="meeting-list__status" aria-label="会議の状態">
+                <span className={`meeting-status-badge ${isAlive ? "meeting-status-badge--alive" : "meeting-status-badge--stopped"}`}>
+                  {isAlive ? "稼働中" : "停止中"}
+                </span>
+                <span className={`meeting-status-badge ${hasResult ? "meeting-status-badge--result" : "meeting-status-badge--pending"}`}>
+                  {hasResult ? "結果あり" : "結果待ち"}
+                </span>
+              </div>
+              <p className={summaryClassName}>
+                <span className="meeting-list__summary-label">最新サマリー:</span>
+                <span className="meeting-list__summary-text">{summaryText}</span>
+              </p>
               <p className="meeting-list__meta">
                 <span className="meeting-list__meta-label">開始:</span>
                 <span className="meeting-list__meta-value">{formatStartedAt(meeting.started_at)}</span>
@@ -97,17 +165,16 @@ export default function Ongoing() {
                 <span className="meeting-list__meta-value">{meeting.backend || "不明"}</span>
               </p>
               <p className="meeting-list__meta">
-                <span className="meeting-list__meta-label">稼働中:</span>
-                <span className="meeting-list__meta-value">{renderStatusLabel(meeting.is_alive, "はい", "いいえ")}</span>
-              </p>
-              <p className="meeting-list__meta">
                 <span className="meeting-list__meta-label">ライブログ:</span>
-                <span className="meeting-list__meta-value">{renderStatusLabel(meeting.has_live)}</span>
+                <span className="meeting-list__meta-value">{meeting.has_live ? "あり" : "なし"}</span>
               </p>
-              <p className="meeting-list__meta">
-                <span className="meeting-list__meta-label">結果:</span>
-                <span className="meeting-list__meta-value">{renderStatusLabel(meeting.has_result)}</span>
-              </p>
+              {hasResult ? (
+                <p className="meeting-list__actions">
+                  <Link className="meeting-list__result-link" to={resultUrl}>
+                    結果を見る
+                  </Link>
+                </p>
+              ) : null}
             </li>
           );
         })}

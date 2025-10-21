@@ -173,6 +173,36 @@ export async function getLiveSnapshot(meetingId) {
   };
 }
 
+// 会議の稼働状況や結果サマリーを手軽に取得するラッパー
+export async function getMeetingStatusDetail(meetingId) {
+  if (!meetingId) {
+    throw new Error("会議IDが指定されていません。");
+  }
+
+  const [statusResult, snapshotResult] = await Promise.allSettled([
+    getMeetingStatus(meetingId),
+    getLiveSnapshot(meetingId),
+  ]);
+
+  const status = statusResult.status === "fulfilled" ? statusResult.value : null;
+  const snapshot = snapshotResult.status === "fulfilled" ? snapshotResult.value : null;
+
+  const summaryCandidate = [snapshot?.summary, snapshot?.final]
+    .map((text) => (typeof text === "string" ? text.trim() : ""))
+    .find((text) => text.length > 0) ?? "";
+
+  const isAlive = typeof status?.is_alive === "boolean" ? status.is_alive : false;
+  const hasResult = typeof status?.has_result === "boolean"
+    ? status.has_result
+    : Boolean(snapshot?.resultReady);
+
+  return {
+    is_alive: isAlive,
+    has_result: hasResult,
+    summary: summaryCandidate,
+  };
+}
+
 async function ensureFilesExist(files, meetingId) {
   const entries = Object.entries(files);
   if (!entries.length) return {};

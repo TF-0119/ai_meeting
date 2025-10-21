@@ -23,6 +23,11 @@ describe("Ongoing", () => {
       },
     ];
     const listMock = vi.spyOn(api, "listMeetings").mockResolvedValue(meetings);
+    const statusMock = vi.spyOn(api, "getMeetingStatusDetail").mockResolvedValue({
+      is_alive: true,
+      has_result: true,
+      summary: "これは最新サマリーです。",
+    });
 
     const { container, unmount } = await renderOngoing();
 
@@ -31,12 +36,28 @@ describe("Ongoing", () => {
     await flushEffects();
     await flushEffects();
 
+    await flushEffects();
+
     expect(listMock).toHaveBeenCalledTimes(1);
+    expect(statusMock).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("テスト会議");
     expect(container.textContent).toContain("2024-01-02 03:04:05");
+    expect(container.textContent).toContain("これは最新サマリーです。");
+
+    const aliveBadge = container.querySelector(".meeting-status-badge--alive");
+    expect(aliveBadge).not.toBeNull();
+    expect(aliveBadge?.textContent).toContain("稼働中");
+
+    const resultBadge = container.querySelector(".meeting-status-badge--result");
+    expect(resultBadge).not.toBeNull();
+    expect(resultBadge?.textContent).toContain("結果あり");
 
     const link = container.querySelector('a[href="/meeting/20240101-000000_12345"]');
     expect(link).not.toBeNull();
+
+    const resultLink = container.querySelector('a[href="/result/20240101-000000_12345"]');
+    expect(resultLink).not.toBeNull();
+    expect(resultLink?.textContent).toContain("結果を見る");
 
     unmount();
   });
