@@ -1,12 +1,20 @@
 """会議設定やエージェント設定に関するデータモデル。"""
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
 from .utils import clamp
+
+
+DEFAULT_AGENT_IDENTITY: Dict[str, Any] = {
+    "core_beliefs": ["自由は創発の源", "役割固定は抑制"],
+    "style_signature": {"tone": "直截", "metaphors": ["波", "共鳴"]},
+    "purpose_bias": {"validity": 0.35, "novelty": 0.40, "coherence": 0.25},
+}
 
 
 class AgentConfig(BaseModel):
@@ -17,6 +25,10 @@ class AgentConfig(BaseModel):
     style: str = ""  # 口調など任意
     reveal_think: bool = False  # trueだと“思考ログ”も表示（研修用）
     memory: List[str] = Field(default_factory=list, description="エージェント固有の覚書リスト")
+    identity: Dict[str, Any] = Field(
+        default_factory=lambda: deepcopy(DEFAULT_AGENT_IDENTITY),
+        description="エージェントの自己認識（Identity Kernel）。",
+    )
 
 
 @dataclass

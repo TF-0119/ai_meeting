@@ -573,6 +573,55 @@ class Meeting:
         bullets = "\n".join(f"- {item}" for item in memory)
         return f"最近の覚書:\n{bullets}"
 
+    def _identity_kernel_prompt(self, agent: AgentConfig) -> Optional[str]:
+        """エージェント固有のアイデンティティ情報をプロンプト用に整形する。"""
+
+        identity = getattr(agent, "identity", None)
+        if not isinstance(identity, dict):
+            return None
+
+        sections: List[str] = []
+
+        core_beliefs = identity.get("core_beliefs")
+        if isinstance(core_beliefs, (list, tuple)):
+            beliefs = [str(item).strip() for item in core_beliefs if str(item).strip()]
+            if beliefs:
+                sections.append(f"信条: {' / '.join(beliefs)}")
+
+        style_signature = identity.get("style_signature")
+        if isinstance(style_signature, dict):
+            tone = style_signature.get("tone")
+            tone_text = str(tone).strip() if tone is not None else ""
+            metaphors = style_signature.get("metaphors")
+            metaphor_values: List[str] = []
+            if isinstance(metaphors, (list, tuple)):
+                metaphor_values = [str(item).strip() for item in metaphors if str(item).strip()]
+            style_parts: List[str] = []
+            if tone_text:
+                style_parts.append(f"トーン={tone_text}")
+            if metaphor_values:
+                style_parts.append(f"メタファー={'・'.join(metaphor_values)}")
+            if style_parts:
+                sections.append("文体署名: " + " / ".join(style_parts))
+
+        purpose_bias = identity.get("purpose_bias")
+        if isinstance(purpose_bias, dict):
+            bias_parts: List[str] = []
+            for key, label in (("validity", "妥当性"), ("novelty", "新規性"), ("coherence", "整合性")):
+                value = purpose_bias.get(key)
+                try:
+                    number = float(value)
+                except (TypeError, ValueError):
+                    continue
+                bias_parts.append(f"{label}={number:.2f}")
+            if bias_parts:
+                sections.append("志向バイアス: " + " / ".join(bias_parts))
+
+        if not sections:
+            return None
+
+        return "\n".join(["--- アイデンティティ指針 ---", *sections])
+
     def _record_agent_memory(
         self,
         agent_names: Any,
@@ -709,6 +758,9 @@ class Meeting:
             "必要に応じて仮説・観測・確証・懸念・測定計画などの要素を短文で整理してください。"
         )
         profile = self._personality_profiles.get(agent.name)
+        identity_text = self._identity_kernel_prompt(agent)
+        if identity_text:
+            sys += f"\n{identity_text}"
         if profile:
             sys += (
                 f" あなたの個性は『{profile.name}』。{profile.thinking_guidance}"
@@ -1062,8 +1114,11 @@ class Meeting:
             return None
 
     def _speak_from_thought(self, agent: AgentConfig, thought: str) -> str:
+        identity_text = self._identity_kernel_prompt(agent)
+        identity_block = f"\n{identity_text}" if identity_text else ""
         sys = (
             agent.system
+            + identity_block
             + "\n※以下はあなた自身の非公開メモです。要点を基に"
             + " {\"diverge\": [{\"hypothesis\": \"...\", \"assumptions\": []}],"
             + " \"learn\": [{\"insight\": \"...\", \"why\": \"...\", \"links\": []}],"
@@ -1159,6 +1214,9 @@ class Meeting:
     def _agent_prompt(self, agent: AgentConfig, last_summary: str) -> LLMRequest:
         # ベースとなる役割プロンプト
         sys_prompt = agent.system
+        identity_text = self._identity_kernel_prompt(agent)
+        if identity_text:
+            sys_prompt += "\n" + identity_text
         last_turn = self.history[-1] if self.history else None
         last_speaker = last_turn.speaker if last_turn else ""
         last_content = (
@@ -1189,7 +1247,7 @@ class Meeting:
             sys_prompt += textwrap.dedent(
                 f"""
                 \n--- 個性指針 ---
-- タイプ: {profile.name}
+                - タイプ: {profile.name}
 - 特徴: {profile.description}
 - 発話トーン: {profile.speaking_guidance}
                 """

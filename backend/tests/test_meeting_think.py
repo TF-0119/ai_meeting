@@ -50,6 +50,8 @@ def test_think_prompt_focuses_on_last_speaker(tmp_path, monkeypatch):
 
     req = captured["req"]
     user_prompt = req.messages[0]["content"]
+    assert "--- アイデンティティ指針 ---" in req.system
+    assert "自由は創発の源" in req.system
     assert "last_turn_detail: Bob: 議論の現状を整理したので、次は役割分担を決めたい。" in user_prompt
     assert "前回の発言者（名前）への応答方針を1文でまとめ、必要なら次の質問を用意する。" in req.messages[0]["content"]
     assert "Cycleメモ候補: Diverge/仮説, Learn/観測, Converge/確証, next_goal/次の焦点。" in req.messages[0]["content"]
@@ -84,6 +86,7 @@ def test_think_prompt_includes_agent_memory(tmp_path, monkeypatch):
     assert "個性プロファイル" in user_content
     assert "重要顧客との約束を最優先で守る" in user_content
     assert "あなたの個性は『ASSERTIVE』" in req.system
+    assert "--- アイデンティティ指針 ---" in req.system
 
 
 def test_run_emits_cycle_payload_in_think_mode(tmp_path, monkeypatch):
