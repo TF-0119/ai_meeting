@@ -737,30 +737,237 @@
   height: 360px;
   overflow: auto;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 8px;
+  border-radius: var(--radius-lg);
+  padding: 12px;
   background: var(--color-surface-muted);
-  margin-top: 8px;
-}
-
-.timeline-item {
+  margin-top: 12px;
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scroll-padding-block: 12px;
+  scrollbar-gutter: stable both-edges;
+}
+
+.timeline:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.timeline-card {
+  --timeline-band-color: var(--timeline-band-1);
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--timeline-band-width) 1fr;
+  background: var(--timeline-card-bg);
+  border: 1px solid var(--timeline-card-border);
+  border-radius: var(--timeline-card-radius);
+  box-shadow: var(--timeline-card-shadow);
+  overflow: hidden;
+  transition: transform var(--transition-base), box-shadow var(--transition-base),
+    border-color var(--transition-base), background var(--transition-base);
+}
+
+.timeline-card:hover,
+.timeline-card:focus-within {
+  transform: translateY(-1px);
+  background: var(--timeline-card-bg-hover);
+  border-color: color-mix(in srgb, var(--timeline-band-color) 35%, var(--timeline-card-border));
+  box-shadow: var(--timeline-card-shadow-hover);
+}
+
+.timeline-card__band {
+  width: var(--timeline-band-width);
+  background: var(--timeline-band-color);
+  border-radius: var(--timeline-card-radius) 0 0 var(--timeline-card-radius);
+}
+
+.timeline-card__body {
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  padding: 6px 4px;
-  border-bottom: 1px dashed color-mix(in srgb, var(--color-text) 12%, transparent);
 }
 
-.timeline-item:last-child {
-  border-bottom: none;
+.timeline-card__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.speaker {
-  min-width: 80px;
-  color: color-mix(in srgb, var(--color-accent) 65%, white 35%);
+.timeline-card__initial {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  background: color-mix(in srgb, var(--timeline-band-color) 30%, transparent);
+  color: var(--color-text-strong);
+  border: 1px solid color-mix(in srgb, var(--timeline-band-color) 55%, transparent);
 }
 
-.text {
+[data-theme="dark"] .timeline-card__initial,
+:root[data-theme="dark"] .timeline-card__initial {
+  color: var(--color-text);
+}
+
+.timeline-card__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.timeline-card__speaker {
+  font-weight: 600;
+  color: var(--color-text-strong);
+}
+
+.timeline-card__timestamp {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.timeline-card__content {
+  overflow: hidden;
+  max-height: var(--timeline-card-content-max, 400px);
+  opacity: 1;
+  transition: max-height var(--timeline-collapse-duration, 240ms ease),
+    opacity var(--timeline-collapse-duration, 240ms ease);
+}
+
+.timeline-card__text {
+  margin: 0;
+  color: var(--color-text);
+  line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.timeline-card[data-expanded="false"] .timeline-card__content {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.timeline-card[data-expanded="true"] .timeline-card__content {
+  opacity: 1;
+}
+
+.timeline-card--accent-1 {
+  --timeline-band-color: var(--timeline-band-1);
+}
+
+.timeline-card--accent-2 {
+  --timeline-band-color: var(--timeline-band-2);
+}
+
+.timeline-card--accent-3 {
+  --timeline-band-color: var(--timeline-band-3);
+}
+
+.timeline-card--accent-4 {
+  --timeline-band-color: var(--timeline-band-4);
+}
+
+.timeline-card--accent-5 {
+  --timeline-band-color: var(--timeline-band-5);
+}
+
+.timeline-card--accent-6 {
+  --timeline-band-color: var(--timeline-band-6);
+}
+
+.intent-tag {
+  --intent-tag-bg: var(--intent-generate-bg);
+  --intent-tag-color: var(--intent-generate-color);
+  --intent-tag-border: var(--intent-generate-border);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--intent-tag-bg);
+  color: var(--intent-tag-color);
+  border: 1px solid var(--intent-tag-border);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.intent-tag--generate {
+  --intent-tag-bg: var(--intent-generate-bg);
+  --intent-tag-color: var(--intent-generate-color);
+  --intent-tag-border: var(--intent-generate-border);
+}
+
+.intent-tag--critique {
+  --intent-tag-bg: var(--intent-critique-bg);
+  --intent-tag-color: var(--intent-critique-color);
+  --intent-tag-border: var(--intent-critique-border);
+}
+
+.intent-tag--meta {
+  --intent-tag-bg: var(--intent-meta-bg);
+  --intent-tag-color: var(--intent-meta-color);
+  --intent-tag-border: var(--intent-meta-border);
+}
+
+.progress-icon {
+  --progress-icon-bg: var(--progress-icon-planned-bg);
+  --progress-icon-color: var(--progress-icon-planned-color);
+  --progress-icon-border: var(--progress-icon-planned-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--progress-icon-bg);
+  color: var(--progress-icon-color);
+  border: 1px solid var(--progress-icon-border);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.progress-icon--planned {
+  --progress-icon-bg: var(--progress-icon-planned-bg);
+  --progress-icon-color: var(--progress-icon-planned-color);
+  --progress-icon-border: var(--progress-icon-planned-border);
+}
+
+.progress-icon--active {
+  --progress-icon-bg: var(--progress-icon-active-bg);
+  --progress-icon-color: var(--progress-icon-active-color);
+  --progress-icon-border: var(--progress-icon-active-border);
+  border-radius: 999px;
+}
+
+.progress-icon--done {
+  --progress-icon-bg: var(--progress-icon-done-bg);
+  --progress-icon-color: var(--progress-icon-done-color);
+  --progress-icon-border: var(--progress-icon-done-border);
+  border-radius: 4px;
+}
+
+@media (max-width: 720px) {
+  .timeline {
+    height: clamp(280px, 45vh, 360px);
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .timeline-card__body {
+    padding: 12px 14px 14px;
+  }
+
+  .timeline-card__initial {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
 }
 
 .summary,

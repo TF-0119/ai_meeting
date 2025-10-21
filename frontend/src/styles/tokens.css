@@ -30,6 +30,14 @@
   --color-danger-soft: rgba(214, 69, 80, 0.15);
   --color-danger-border: rgba(214, 69, 80, 0.45);
 
+  --color-intent-meta: #7c3aed;
+  --color-intent-meta-soft: rgba(124, 58, 237, 0.16);
+  --color-intent-meta-border: rgba(124, 58, 237, 0.42);
+
+  --color-info: #0ea5e9;
+  --color-info-soft: rgba(14, 165, 233, 0.18);
+  --color-info-border: rgba(14, 165, 233, 0.42);
+
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
   --shadow-md: 0 8px 24px rgba(15, 23, 42, 0.16);
 
@@ -37,6 +45,43 @@
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
+
+  --timeline-band-width: 8px;
+  --timeline-card-radius: var(--radius-lg);
+  --timeline-card-bg: color-mix(in srgb, var(--color-surface-layer) 94%, white 6%);
+  --timeline-card-bg-hover: color-mix(in srgb, var(--timeline-card-bg) 84%, white 16%);
+  --timeline-card-border: color-mix(in srgb, var(--color-border) 80%, transparent);
+  --timeline-card-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+  --timeline-card-shadow-hover: 0 12px 32px rgba(15, 23, 42, 0.14);
+  --timeline-collapse-duration: 240ms ease;
+  --timeline-card-content-max: 480px;
+
+  --timeline-band-1: #406cff;
+  --timeline-band-2: #d64550;
+  --timeline-band-3: #1f9d55;
+  --timeline-band-4: #d38a11;
+  --timeline-band-5: #7c3aed;
+  --timeline-band-6: #0ea5e9;
+
+  --intent-generate-bg: color-mix(in srgb, var(--color-accent) 15%, transparent);
+  --intent-generate-color: var(--color-accent-strong);
+  --intent-generate-border: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  --intent-critique-bg: var(--color-danger-soft);
+  --intent-critique-color: var(--color-danger);
+  --intent-critique-border: var(--color-danger-border);
+  --intent-meta-bg: var(--color-intent-meta-soft);
+  --intent-meta-color: var(--color-intent-meta);
+  --intent-meta-border: var(--color-intent-meta-border);
+
+  --progress-icon-planned-bg: color-mix(in srgb, var(--color-text-muted) 18%, transparent);
+  --progress-icon-planned-color: var(--color-text-muted);
+  --progress-icon-planned-border: color-mix(in srgb, var(--color-text-muted) 35%, transparent);
+  --progress-icon-active-bg: color-mix(in srgb, var(--color-info) 22%, transparent);
+  --progress-icon-active-color: var(--color-info);
+  --progress-icon-active-border: var(--color-info-border);
+  --progress-icon-done-bg: color-mix(in srgb, var(--color-success) 20%, transparent);
+  --progress-icon-done-color: var(--color-success);
+  --progress-icon-done-border: color-mix(in srgb, var(--color-success) 45%, transparent);
 
   --transition-fast: 120ms ease;
   --transition-base: 200ms ease;
@@ -86,10 +131,55 @@
   --color-danger-soft: rgba(255, 107, 107, 0.12);
   --color-danger-border: rgba(255, 107, 107, 0.55);
 
+  --color-intent-meta: #b29bff;
+  --color-intent-meta-soft: rgba(178, 155, 255, 0.16);
+  --color-intent-meta-border: rgba(178, 155, 255, 0.45);
+
+  --color-info: #5ed0ff;
+  --color-info-soft: rgba(94, 208, 255, 0.18);
+  --color-info-border: rgba(94, 208, 255, 0.45);
+
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
   --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.35);
 
   --focus-ring: 0 0 0 3px rgba(91, 141, 239, 0.35);
+
+  --timeline-band-width: 8px;
+  --timeline-card-radius: var(--radius-lg);
+  --timeline-card-bg: color-mix(in srgb, var(--color-surface-layer) 82%, transparent);
+  --timeline-card-bg-hover: color-mix(in srgb, var(--timeline-card-bg) 75%, transparent 25%);
+  --timeline-card-border: color-mix(in srgb, var(--color-border) 65%, transparent);
+  --timeline-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --timeline-card-shadow-hover: 0 16px 36px rgba(0, 0, 0, 0.45);
+  --timeline-collapse-duration: 240ms ease;
+  --timeline-card-content-max: 520px;
+
+  --timeline-band-1: #6b9df7;
+  --timeline-band-2: #ff6b6b;
+  --timeline-band-3: #38c172;
+  --timeline-band-4: #f0ad4e;
+  --timeline-band-5: #b29bff;
+  --timeline-band-6: #5ed0ff;
+
+  --intent-generate-bg: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  --intent-generate-color: var(--color-accent-strong);
+  --intent-generate-border: color-mix(in srgb, var(--color-accent) 55%, transparent);
+  --intent-critique-bg: var(--color-danger-soft);
+  --intent-critique-color: var(--color-danger);
+  --intent-critique-border: var(--color-danger-border);
+  --intent-meta-bg: var(--color-intent-meta-soft);
+  --intent-meta-color: var(--color-intent-meta);
+  --intent-meta-border: var(--color-intent-meta-border);
+
+  --progress-icon-planned-bg: color-mix(in srgb, var(--color-text-muted) 24%, transparent);
+  --progress-icon-planned-color: var(--color-text-muted);
+  --progress-icon-planned-border: color-mix(in srgb, var(--color-text-muted) 40%, transparent);
+  --progress-icon-active-bg: color-mix(in srgb, var(--color-info) 28%, transparent);
+  --progress-icon-active-color: var(--color-info);
+  --progress-icon-active-border: var(--color-info-border);
+  --progress-icon-done-bg: color-mix(in srgb, var(--color-success) 30%, transparent);
+  --progress-icon-done-color: var(--color-success);
+  --progress-icon-done-border: color-mix(in srgb, var(--color-success) 55%, transparent);
 
   --bg: var(--color-surface-app);
   --card: var(--color-surface-layer);
@@ -105,11 +195,11 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    color-scheme: dark;
-    --color-surface-app: #0b0c10;
-    --color-surface-layer: #121318;
-    --color-surface-muted: #0d0e13;
+    :root:not([data-theme]) {
+      color-scheme: dark;
+      --color-surface-app: #0b0c10;
+      --color-surface-layer: #121318;
+      --color-surface-muted: #0d0e13;
     --color-surface-elevated: #1b1d24;
     --color-surface-inverse: #f7f9fc;
 
@@ -130,14 +220,59 @@
     --color-success-soft: rgba(56, 193, 114, 0.18);
     --color-warning: #f0ad4e;
     --color-warning-soft: rgba(240, 173, 78, 0.18);
-    --color-danger: #ff6b6b;
-    --color-danger-soft: rgba(255, 107, 107, 0.12);
-    --color-danger-border: rgba(255, 107, 107, 0.55);
+      --color-danger: #ff6b6b;
+      --color-danger-soft: rgba(255, 107, 107, 0.12);
+      --color-danger-border: rgba(255, 107, 107, 0.55);
 
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
-    --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.35);
+      --color-intent-meta: #b29bff;
+      --color-intent-meta-soft: rgba(178, 155, 255, 0.16);
+      --color-intent-meta-border: rgba(178, 155, 255, 0.45);
 
-    --focus-ring: 0 0 0 3px rgba(91, 141, 239, 0.35);
+      --color-info: #5ed0ff;
+      --color-info-soft: rgba(94, 208, 255, 0.18);
+      --color-info-border: rgba(94, 208, 255, 0.45);
+
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+      --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.35);
+
+      --focus-ring: 0 0 0 3px rgba(91, 141, 239, 0.35);
+
+      --timeline-band-width: 8px;
+      --timeline-card-radius: var(--radius-lg);
+      --timeline-card-bg: color-mix(in srgb, var(--color-surface-layer) 82%, transparent);
+      --timeline-card-bg-hover: color-mix(in srgb, var(--timeline-card-bg) 75%, transparent 25%);
+      --timeline-card-border: color-mix(in srgb, var(--color-border) 65%, transparent);
+      --timeline-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+      --timeline-card-shadow-hover: 0 16px 36px rgba(0, 0, 0, 0.45);
+      --timeline-collapse-duration: 240ms ease;
+      --timeline-card-content-max: 520px;
+
+      --timeline-band-1: #6b9df7;
+      --timeline-band-2: #ff6b6b;
+      --timeline-band-3: #38c172;
+      --timeline-band-4: #f0ad4e;
+      --timeline-band-5: #b29bff;
+      --timeline-band-6: #5ed0ff;
+
+      --intent-generate-bg: color-mix(in srgb, var(--color-accent) 20%, transparent);
+      --intent-generate-color: var(--color-accent-strong);
+      --intent-generate-border: color-mix(in srgb, var(--color-accent) 55%, transparent);
+      --intent-critique-bg: var(--color-danger-soft);
+      --intent-critique-color: var(--color-danger);
+      --intent-critique-border: var(--color-danger-border);
+      --intent-meta-bg: var(--color-intent-meta-soft);
+      --intent-meta-color: var(--color-intent-meta);
+      --intent-meta-border: var(--color-intent-meta-border);
+
+      --progress-icon-planned-bg: color-mix(in srgb, var(--color-text-muted) 24%, transparent);
+      --progress-icon-planned-color: var(--color-text-muted);
+      --progress-icon-planned-border: color-mix(in srgb, var(--color-text-muted) 40%, transparent);
+      --progress-icon-active-bg: color-mix(in srgb, var(--color-info) 28%, transparent);
+      --progress-icon-active-color: var(--color-info);
+      --progress-icon-active-border: var(--color-info-border);
+      --progress-icon-done-bg: color-mix(in srgb, var(--color-success) 30%, transparent);
+      --progress-icon-done-color: var(--color-success);
+      --progress-icon-done-border: color-mix(in srgb, var(--color-success) 55%, transparent);
 
     --bg: var(--color-surface-app);
     --card: var(--color-surface-layer);
@@ -147,8 +282,8 @@
     --ok: var(--color-success);
     --run: var(--color-warning);
     --border: var(--color-border);
-    --error: var(--color-danger);
-    --error-border: var(--color-danger-border);
-    --error-bg: var(--color-danger-soft);
+      --error: var(--color-danger);
+      --error-border: var(--color-danger-border);
+      --error-bg: var(--color-danger-soft);
+    }
   }
-}

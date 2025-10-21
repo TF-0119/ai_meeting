@@ -153,12 +153,37 @@ export default function Meeting() {
         </div>
         <div className="timeline" ref={listRef} aria-live="polite">
           {msgs.length === 0 && <div className="muted">（ログを待機中… ファイル未生成の可能性）</div>}
-          {msgs.map((m) => (
-            <div key={m.id} className="timeline-item">
-              <span className="speaker">{m.speaker}</span>
-              <span className="text">{m.text}</span>
-            </div>
-          ))}
+          {msgs.map((m, index) => {
+            const initial = (m.speaker ?? "?").trim().charAt(0).toUpperCase() || "?";
+            const bandIndex = (index % 6) + 1;
+            return (
+              <article
+                key={m.id}
+                className={`timeline-card timeline-card--accent-${bandIndex}`}
+                data-expanded="true"
+              >
+                <div className="timeline-card__band" aria-hidden="true" />
+                <div className="timeline-card__body">
+                  <header className="timeline-card__header">
+                    <span className="timeline-card__initial" aria-hidden="true">
+                      {initial}
+                    </span>
+                    <div className="timeline-card__meta">
+                      <span className="timeline-card__speaker">{m.speaker}</span>
+                      {m.ts && (
+                        <time className="timeline-card__timestamp" dateTime={m.ts}>
+                          {m.ts}
+                        </time>
+                      )}
+                    </div>
+                  </header>
+                  <div className="timeline-card__content">
+                    <p className="timeline-card__text">{m.text}</p>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
         </div>
         {!resultReady && (
           <p className="hint" role="note">
