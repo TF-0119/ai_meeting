@@ -90,6 +90,152 @@ describe("Ongoing", () => {
 
     unmount();
   });
+
+  it("停止操作が成功すると一覧を再取得しボタン状態が戻る", async () => {
+    const meetings = [
+      {
+        id: "20240101-000000_12345",
+        topic: "テスト会議",
+        backend: "ollama",
+        started_at: "20240102-030405",
+        is_alive: true,
+        has_live: true,
+        has_result: false,
+      },
+    ];
+    const updatedMeetings = [
+      {
+        ...meetings[0],
+        is_alive: false,
+        has_result: true,
+      },
+    ];
+    const listMock = vi.spyOn(api, "listMeetings")
+      .mockResolvedValueOnce(meetings)
+      .mockResolvedValueOnce(updatedMeetings);
+    const statusMock = vi.spyOn(api, "getMeetingStatusDetail")
+      .mockResolvedValueOnce({
+        is_alive: true,
+        has_result: false,
+        summary: "停止前",
+      })
+      .mockResolvedValueOnce({
+        is_alive: false,
+        has_result: true,
+        summary: "停止後",
+      });
+
+    let resolveStop;
+    const stopPromise = new Promise((resolve) => {
+      resolveStop = resolve;
+    });
+    const stopMock = vi.spyOn(api, "stopMeeting").mockImplementation(() => stopPromise);
+
+    const { container, unmount } = await renderOngoing();
+
+    await flushEffects();
+    await flushEffects();
+    await flushEffects();
+
+    let button = container.querySelector("button");
+    expect(button).not.toBeNull();
+    expect(button?.textContent).toContain("停止");
+    expect(button?.disabled).toBe(false);
+
+    act(() => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await flushEffects();
+
+    expect(stopMock).toHaveBeenCalledTimes(1);
+    button = container.querySelector("button");
+    expect(button?.disabled).toBe(true);
+    expect(button?.textContent).toContain("停止中");
+
+    await act(async () => {
+      resolveStop();
+      await Promise.resolve();
+    });
+
+    await flushEffects();
+    await flushEffects();
+    await flushEffects();
+
+    expect(listMock).toHaveBeenCalledTimes(2);
+    expect(statusMock).toHaveBeenCalledTimes(2);
+    button = container.querySelector("button");
+    expect(button?.disabled).toBe(false);
+    expect(button?.textContent).toContain("停止");
+
+    unmount();
+  });
+
+  it("停止操作が失敗するとエラーを通知してボタン状態を戻す", async () => {
+    const meetings = [
+      {
+        id: "20240101-000000_12345",
+        topic: "テスト会議",
+        backend: "ollama",
+        started_at: "20240102-030405",
+        is_alive: true,
+        has_live: true,
+        has_result: false,
+      },
+    ];
+    const listMock = vi.spyOn(api, "listMeetings").mockResolvedValue(meetings);
+    const statusMock = vi.spyOn(api, "getMeetingStatusDetail").mockResolvedValue({
+      is_alive: true,
+      has_result: false,
+      summary: "",
+    });
+
+    let rejectStop;
+    const stopPromise = new Promise((_, reject) => {
+      rejectStop = reject;
+    });
+    const stopMock = vi.spyOn(api, "stopMeeting").mockImplementation(() => stopPromise);
+    const alertMock = vi.spyOn(window, "alert").mockImplementation(() => {});
+
+    const { container, unmount } = await renderOngoing();
+
+    await flushEffects();
+    await flushEffects();
+    await flushEffects();
+
+    let button = container.querySelector("button");
+    expect(button).not.toBeNull();
+    expect(button?.disabled).toBe(false);
+
+    act(() => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await flushEffects();
+
+    expect(stopMock).toHaveBeenCalledTimes(1);
+    button = container.querySelector("button");
+    expect(button?.disabled).toBe(true);
+    expect(button?.textContent).toContain("停止中");
+
+    await act(async () => {
+      rejectStop(new Error("停止に失敗しました"));
+      await Promise.resolve();
+    });
+
+    await flushEffects();
+    await flushEffects();
+
+    expect(alertMock).toHaveBeenCalledTimes(1);
+    expect(alertMock).toHaveBeenCalledWith("停止に失敗しました");
+    expect(listMock).toHaveBeenCalledTimes(1);
+    expect(statusMock).toHaveBeenCalledTimes(1);
+    button = container.querySelector("button");
+    expect(button?.disabled).toBe(false);
+    expect(button?.textContent).toContain("停止");
+
+    unmount();
+  });
 });
 
 async function renderOngoing() {
