@@ -741,26 +741,184 @@
   padding: 8px;
   background: var(--color-surface-muted);
   margin-top: 8px;
-}
-
-.timeline-item {
   display: flex;
+  flex-direction: column;
   gap: 8px;
-  padding: 6px 4px;
-  border-bottom: 1px dashed color-mix(in srgb, var(--color-text) 12%, transparent);
 }
 
-.timeline-item:last-child {
-  border-bottom: none;
+.timeline-entry {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-layer);
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base), transform var(--transition-base);
+  color: inherit;
+  width: 100%;
 }
 
-.speaker {
-  min-width: 80px;
-  color: color-mix(in srgb, var(--color-accent) 65%, white 35%);
+.timeline-entry:hover,
+.timeline-entry.is-expanded {
+  border-color: var(--color-accent-border);
+  box-shadow: var(--shadow-sm);
 }
 
-.text {
+.timeline-entry:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.timeline-entry-accent {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--timeline-accent-bg, var(--color-accent-soft));
+  color: var(--timeline-accent-fg, var(--color-accent));
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+  min-height: 100%;
+  padding: 0 6px;
+}
+
+.timeline-entry-initial {
+  font-weight: 700;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+}
+
+.timeline-entry-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.timeline-entry-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.timeline-entry-speaker {
+  font-weight: 600;
+  color: var(--color-text-strong);
+}
+
+.timeline-entry-time {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.timeline-entry-snippet {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-entry-details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+}
+
+.timeline-entry-details[hidden] {
+  display: none !important;
+}
+
+.timeline-entry-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.timeline-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  background: var(--timeline-accent-bg, var(--color-accent-soft));
+  color: var(--timeline-accent-fg, var(--color-accent));
+}
+
+.timeline-entry-profile-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.timeline-entry-speaker-full {
+  font-weight: 600;
+  color: var(--color-text-strong);
+}
+
+.timeline-entry-phase,
+.timeline-entry-phase-turn {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.timeline-entry-progress {
+  margin-left: auto;
+  font-size: 1.4rem;
+  color: var(--timeline-accent-fg, var(--color-accent));
+}
+
+.timeline-entry-text {
+  font-size: 0.95rem;
+  line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.timeline-entry-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.timeline-intent-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.timeline-intent-tag.intent-generate {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.timeline-intent-tag.intent-critique {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.timeline-intent-tag.intent-meta {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.timeline-phase-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  background: color-mix(in srgb, var(--color-text-muted) 18%, transparent);
+  color: var(--color-text-muted);
 }
 
 .summary,
