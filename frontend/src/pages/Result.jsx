@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import Card from "../components/Card";
+import Button from "../components/Button";
 import { getMeetingResult } from "../services/api";
 
 export default function Result() {
@@ -68,47 +70,45 @@ export default function Result() {
 
   if (status !== "success") {
     return (
-      <section className="grid-2">
-        <div className="card">
-          <h2 className="title-sm">Final</h2>
-          <div className="muted">Meeting ID: {id}</div>
+      <section className="grid-2" aria-labelledby="result-title">
+        <Card as="article" headingLevel="h1" title="Final" id="result" description={`Meeting ID: ${id}`}>
           <p className="muted">{statusMessage}</p>
-        </div>
+        </Card>
       </section>
     );
   }
 
   return (
-    <section className="grid-2">
-      <div className="card">
-        <h2 className="title-sm">Final</h2>
-        <div className="muted">Meeting ID: {id}</div>
-        <div className="muted">Topic: {topic}</div>
-        <pre className="final">{final}</pre>
+    <section className="grid-2" aria-labelledby="result-title">
+      <Card
+        as="article"
+        headingLevel="h1"
+        title="Final"
+        id="result"
+        description={`Meeting ID: ${id}`}
+        actions={
+          <>
+            {downloads.map(({ label, path }) =>
+              path ? (
+                <Button key={label} as="a" variant="ghost" href={path} download rel="noreferrer">
+                  {label}
+                </Button>
+              ) : (
+                <Button key={label} variant="ghost" disabled>
+                  {label}
+                </Button>
+              )
+            )}
+          </>
+        }
+      >
+        <p className="muted">Topic: {topic}</p>
+        <pre className="final" aria-live="polite">
+          {final}
+        </pre>
+      </Card>
 
-        <div className="actions">
-          {downloads.map(({ label, path }) =>
-            path ? (
-              <a
-                key={label}
-                className="btn ghost"
-                href={path}
-                download
-                rel="noreferrer"
-              >
-                {label}
-              </a>
-            ) : (
-              <button key={label} className="btn ghost" disabled>
-                {label}
-              </button>
-            )
-          )}
-        </div>
-      </div>
-
-      <aside className="card">
-        <h3 className="title-sm">KPI</h3>
+      <Card as="aside" title="KPI" headingLevel="h2" id="result-kpi">
         <div className="kpi-grid">
           {items.map(({ key, label }) => (
             <div className="kpi" key={key}>
@@ -119,7 +119,7 @@ export default function Result() {
             </div>
           ))}
         </div>
-      </aside>
+      </Card>
     </section>
   );
 }

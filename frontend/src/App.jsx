@@ -8,6 +8,7 @@ import ResultsList from "./pages/ResultsList.jsx";
 import Settings from "./pages/Settings.jsx";
 import { getHealth } from "./services/api.js";
 import { loadHomePreset } from "./services/presets.js";
+import ThemeToggle from "./components/ThemeToggle.jsx";
 
 const NAV_TABS = [
   { to: "/ongoing", label: "進行中" },
@@ -127,11 +128,14 @@ export default function App() {
           <div className="nav-inline">
             <NavigationLinks onNavigate={() => setMenuOpen(false)} />
           </div>
-          <StatusIndicator
-            health={healthState}
-            backendPreference={backendPreference}
-            openaiConfigured={openaiConfigured}
-          />
+          <div className="header-actions">
+            <ThemeToggle />
+            <StatusIndicator
+              health={healthState}
+              backendPreference={backendPreference}
+              openaiConfigured={openaiConfigured}
+            />
+          </div>
         </div>
         <div className="nav-drawer">
           <div className="nav-drawer-content">

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import { useNavigate } from "react-router-dom";
 import { getModels, startMeeting } from "../services/api";
 import { loadHomePreset, saveHomePreset } from "../services/presets";
+import Button from "../components/Button";
+import Card from "../components/Card";
+import FormField from "../components/FormField";
 import FieldError from "../components/FieldError";
 
 const INITIAL_FORM_STATE = {
@@ -379,8 +382,6 @@ export default function Home() {
     },
   ];
   const hasErrors = Object.keys(errors).length > 0;
-  const topicErrorId = "home-topic-error";
-  const topicHintId = "home-topic-hint";
   const precisionErrorId = "home-precision-error";
   const backendHintId = "home-backend-hint";
   const backendErrorId = "home-backend-error";
@@ -603,70 +604,61 @@ export default function Home() {
 
 
   return (
-    <section className="card home-card">
-      <h1 className="title">会議の作成</h1>
-
-      <div className="template-toolbar" role="region" aria-label="テンプレートの選択">
-        <div className="template-select">
-          <label className="template-label">
-            <span className="template-label-text">テンプレート</span>
-            <select className="select" value={selectedTemplate} onChange={handleTemplateChange}>
-              {TEMPLATE_DEFINITIONS.map((template) => (
-                <option key={template.value} value={template.value}>
-                  {template.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="template-description">{templateInfo?.description}</div>
+    <section aria-labelledby="home-title">
+      <Card as="article" className="home-card" headingLevel="h1" title="会議の作成" id="home">
+        <div className="template-toolbar" role="region" aria-label="テンプレートの選択">
+          <div className="template-select">
+            <label className="template-label">
+              <span className="template-label-text">テンプレート</span>
+              <select className="select" value={selectedTemplate} onChange={handleTemplateChange}>
+                {TEMPLATE_DEFINITIONS.map((template) => (
+                  <option key={template.value} value={template.value}>
+                    {template.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="template-description">{templateInfo?.description}</div>
+          </div>
+          <div className="template-actions">
+            <Button type="button" variant="ghost" onClick={handleLoadPreset} disabled={!hasSavedPreset}>
+              プリセットを読込
+            </Button>
+            <Button type="button" variant="ghost" onClick={handleSavePreset}>
+              プリセットとして保存
+            </Button>
+          </div>
         </div>
-        <div className="template-actions">
-          <button type="button" className="btn ghost" onClick={handleLoadPreset} disabled={!hasSavedPreset}>
-            プリセットを読込
-          </button>
-          <button type="button" className="btn ghost" onClick={handleSavePreset}>
-            プリセットとして保存
-          </button>
-        </div>
-      </div>
 
-      {presetStatus && <div className="preset-status">{presetStatus}</div>}
+        {presetStatus && <div className="preset-status">{presetStatus}</div>}
 
-      <StepProgress steps={progressSteps} />
+        <StepProgress steps={progressSteps} />
 
-      <div className="home-layout">
-        <form className="form step-form" onSubmit={onSubmit}>
-          <StepCard
+        <div className="home-layout">
+          <form className="form step-form" onSubmit={onSubmit}>
+            <StepCard
             stepNumber={1}
             stepId="basic"
             title="基本設定"
             isOpen={expandedStep === "basic"}
             onToggle={() => handleStepToggle("basic")}
           >
-            <label
-              className={`label${errors.topic ? " has-error" : ""}`}
-              htmlFor="home-topic"
+            <FormField
+              id="home-topic"
+              label="テーマ"
+              hint="会議のテーマを入力してください。"
+              error={errors.topic}
+              required
             >
-              <span className="label-title">テーマ</span>
               <input
-                id="home-topic"
-                className={`input${errors.topic ? " is-error" : ""}`}
+                className="ui-input"
                 value={formState.topic}
                 onChange={(e) => dispatch({ type: "update", field: "topic", value: e.target.value })}
                 onBlur={() => handleFieldBlur("topic")}
                 placeholder="例: 10分で遊べる1畳スポーツの仕様"
                 required
-                aria-invalid={errors.topic ? "true" : "false"}
-                aria-describedby={combineFieldDescriptors(
-                  topicHintId,
-                  errors.topic ? topicErrorId : null,
-                )}
               />
-              <FieldError id={topicErrorId} message={errors.topic} />
-              <div id={topicHintId} className="hint">
-                会議のテーマを入力してください。
-              </div>
-            </label>
+            </FormField>
             <div className="grid-2 step-grid">
               <label
                 className={`label${errors.precision ? " has-error" : ""}`}
@@ -787,9 +779,9 @@ export default function Home() {
             >
               <div className="participant-header" id="home-participants-label">
                 <span>参加者リスト</span>
-                <button type="button" className="btn ghost participant-add" onClick={handleParticipantAdd}>
+                <Button type="button" variant="ghost" onClick={handleParticipantAdd}>
                   行を追加
-                </button>
+                </Button>
               </div>
               <ParticipantsEditor
                 participants={participants}
@@ -921,27 +913,27 @@ export default function Home() {
           </StepCard>
 
           <div className="actions">
-            <button
-              className="btn"
+            <Button
               type="submit"
               disabled={!formState.topic.trim() || loading || formState.openaiKeyRequired || hasErrors}
             >
               {loading ? "起動中..." : "会議を開始"}
-            </button>
+            </Button>
           </div>
         </form>
 
-        <aside className="step-summaries" aria-label="設定サマリー">
-          <StepSummaryCard title="基本設定" items={basicSummaryItems} />
-          <StepSummaryCard title="参加者設定" items={participantsSummaryItems} />
-          <StepSummaryCard title="高度な設定" items={advancedSummaryItems} />
-        </aside>
-      </div>
+          <aside className="step-summaries" aria-label="設定サマリー">
+            <StepSummaryCard title="基本設定" items={basicSummaryItems} />
+            <StepSummaryCard title="参加者設定" items={participantsSummaryItems} />
+            <StepSummaryCard title="高度な設定" items={advancedSummaryItems} />
+          </aside>
+        </div>
 
-      <div className="visually-hidden" aria-live="assertive" role="alert">
-        {liveMessage}
-      </div>
-      {error && <div className="form-submit-error">{error}</div>}
+        <div className="visually-hidden" aria-live="assertive" role="alert">
+          {liveMessage}
+        </div>
+        {error && <div className="form-submit-error">{error}</div>}
+      </Card>
     </section>
   );
 }

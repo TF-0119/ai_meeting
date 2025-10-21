@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "storybook": "storybook dev -p 6006",
+    "storybook:build": "storybook build",
+    "test:a11y": "storybook test --ci --watch=false"
   },
   "keywords": [],
   "author": "",
@@ -18,7 +21,13 @@
     "react-router-dom": "^7.9.1"
   },
   "devDependencies": {
+    "@storybook/addon-a11y": "^8.4.1",
+    "@storybook/addon-essentials": "^8.4.1",
+    "@storybook/addon-interactions": "^8.4.1",
+    "@storybook/react-vite": "^8.4.1",
+    "@storybook/test": "^8.4.1",
     "@vitejs/plugin-react": "^5.0.3",
+    "storybook": "^8.4.1",
     "vite": "^7.1.7",
     "vitest": "^2.1.6"
   }
