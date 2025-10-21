@@ -251,6 +251,55 @@ function normalizeMeetingRecord(source = {}) {
   };
 }
 
+function normalizeResultRecord(source = {}) {
+  const idCandidate =
+    typeof source.meeting_id === "string" && source.meeting_id.trim()
+      ? source.meeting_id.trim()
+      : typeof source.id === "string" && source.id.trim()
+        ? source.id.trim()
+        : String(source.meeting_id ?? source.id ?? "");
+  const topic = typeof source.topic === "string" ? source.topic.trim() : "";
+  const startedAt = typeof source.started_at === "string" ? source.started_at : "";
+  const finalText = typeof source.final === "string" ? source.final : "";
+
+  return {
+    id: idCandidate,
+    meeting_id: idCandidate,
+    topic,
+    started_at: startedAt,
+    final: finalText,
+  };
+}
+
+export async function listResults() {
+  const res = await fetch(withCacheBuster("/api/results"), { cache: "no-store" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const message = text.trim() ? `結果一覧の取得に失敗しました: ${text.trim()}` : `結果一覧の取得に失敗しました (HTTP ${res.status}).`;
+    throw new Error(message);
+  }
+
+  const payload = await res.json().catch(() => ({}));
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    return [];
+  }
+
+  return items
+    .map((item) => normalizeResultRecord(item))
+    .filter((item) => Boolean(item.id))
+    .sort((a, b) => {
+      const aKey = a.started_at || "";
+      const bKey = b.started_at || "";
+      if (aKey && bKey && aKey !== bKey) {
+        return aKey > bKey ? -1 : 1;
+      }
+      if (aKey && !bKey) return -1;
+      if (!aKey && bKey) return 1;
+      return a.id.localeCompare(b.id);
+    });
+}
+
 // 個別会議の状態（プロセスの生存や生成済みファイル）を取得
 export async function getMeetingStatus(meetingId) {
   if (!meetingId) {

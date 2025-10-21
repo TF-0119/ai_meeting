@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from backend.settings import settings
 from backend.defaults import DEFAULT_AGENT_STRING, DEFAULT_AGENT_NAMES
 from pathlib import Path
-from typing import Optional, Dict, List, Union, Any
+from typing import Optional, Dict, List, Union, Any, Tuple
 from urllib.parse import urlparse
 from uuid import uuid4
 import psutil
@@ -19,6 +19,8 @@ app = FastAPI(title="Local LLM Gateway")
 LOGS_DIR = Path(__file__).resolve().parent.parent / "logs"
 LOGS_DIR.mkdir(exist_ok=True)
 app.mount("/logs", StaticFiles(directory=str(LOGS_DIR)), name="logs")
+
+_TIMESTAMP_PREFIX_RE = re.compile(r"^([0-9]{8}-[0-9]{6})")
 
 # ローカルのフロントエンドだけ許可（公開しない前提）
 app.add_middleware(
@@ -506,6 +508,104 @@ def _has_valid_meeting_result(path: Path) -> bool:
         return True
 
     return False
+
+
+def _extract_started_at_from_payload(payload: Dict[str, Any], directory_name: str) -> str:
+    """結果JSONやディレクトリ名から開始時刻を推測する。"""
+
+    if not isinstance(payload, dict):
+        return ""
+
+    candidates: List[str] = []
+    for key in ("started_at", "startedAt", "start_time", "startTime"):
+        raw = payload.get(key)
+        if isinstance(raw, str) and raw.strip():
+            candidates.append(raw.strip())
+
+    for container_key in ("meta", "metadata", "info", "meeting"):
+        container = payload.get(container_key)
+        if not isinstance(container, dict):
+            continue
+        for key in ("started_at", "startedAt", "start_time", "startTime"):
+            raw = container.get(key)
+            if isinstance(raw, str) and raw.strip():
+                candidates.append(raw.strip())
+
+    if candidates:
+        return candidates[0]
+
+    match = _TIMESTAMP_PREFIX_RE.match(directory_name)
+    if match:
+        return match.group(1)
+
+    return ""
+
+
+def _collect_result_entry(log_dir: Path) -> Optional[Tuple[Tuple[int, str, float, str], Dict[str, Any]]]:
+    """単一ディレクトリから結果API用のエントリを生成する。"""
+
+    result_path = log_dir / "meeting_result.json"
+    if not _has_valid_meeting_result(result_path):
+        return None
+
+    try:
+        with result_path.open("r", encoding="utf-8") as fp:
+            payload = json.load(fp)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    if not isinstance(payload, dict):
+        return None
+
+    topic_raw = payload.get("topic")
+    topic = topic_raw.strip() if isinstance(topic_raw, str) else ""
+
+    final_raw = payload.get("final")
+    final_text = final_raw.strip() if isinstance(final_raw, str) else ""
+
+    started_at = _extract_started_at_from_payload(payload, log_dir.name)
+
+    try:
+        mtime = result_path.stat().st_mtime
+    except OSError:
+        mtime = 0.0
+
+    sort_key = (
+        1 if started_at else 0,
+        started_at,
+        mtime,
+        log_dir.name,
+    )
+
+    item = {
+        "meeting_id": log_dir.name,
+        "topic": topic,
+        "started_at": started_at,
+        "final": final_text,
+    }
+
+    return sort_key, item
+
+
+@app.get("/results")
+def list_results():
+    """logs ディレクトリを走査して会議結果の一覧を返す。"""
+
+    try:
+        log_dirs = [path for path in LOGS_DIR.iterdir() if path.is_dir()]
+    except OSError:
+        log_dirs = []
+
+    entries: List[Tuple[Tuple[int, str, float, str], Dict[str, Any]]] = []
+    for log_dir in log_dirs:
+        collected = _collect_result_entry(log_dir)
+        if collected is None:
+            continue
+        entries.append(collected)
+
+    entries.sort(key=lambda item: item[0], reverse=True)
+    return {"items": [item for _, item in entries]}
+
 
 # 単体の状態（超シンプル版）
 @app.get("/meetings/{mid}")
