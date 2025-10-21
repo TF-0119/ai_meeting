@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getLiveSnapshot, stopMeeting } from "@/services/api";
+import Card from "../components/Card";
+import Button from "../components/Button";
 
 export default function Meeting() {
   const { id: meetingId } = useParams();      // ← URLの :id が “logs のフォルダ名” と一致している必要あり
@@ -125,36 +127,50 @@ export default function Meeting() {
   };
 
   return (
-    <section className="grid-2">
-      <div className="card">
-        <div className="row-between">
-          <h2 className="title-sm">進行中の会議</h2>
+    <section className="grid-2" aria-labelledby="meeting-title">
+      <Card
+        as="article"
+        headingLevel="h1"
+        title="進行中の会議"
+        id="meeting"
+        description={`Meeting ID: ${meetingId}`}
+        actions={
+          <>
+            <Button variant="ghost" onClick={handleStop} disabled={isStopping}>
+              中止して戻る
+            </Button>
+            <Button onClick={toResult} disabled={!resultReady}>
+              結果へ
+            </Button>
+          </>
+        }
+      >
+        <div className="row-between" aria-live="polite">
           <span className={`badge ${badge.className}`}>{badge.label}</span>
+          <span className="muted">
+            {resultReady ? "最終結果が利用可能です" : "集計が完了するまでお待ちください"}
+          </span>
         </div>
-        <div className="muted">Meeting ID: {meetingId}</div>
-
-        <div className="timeline" ref={listRef}>
+        <div className="timeline" ref={listRef} aria-live="polite">
           {msgs.length === 0 && <div className="muted">（ログを待機中… ファイル未生成の可能性）</div>}
-          {msgs.map(m => (
+          {msgs.map((m) => (
             <div key={m.id} className="timeline-item">
               <span className="speaker">{m.speaker}</span>
               <span className="text">{m.text}</span>
             </div>
           ))}
         </div>
-
-        <div className="actions">
-          <button className="btn ghost" onClick={handleStop} disabled={isStopping}>中止して戻る</button>
-          <button className="btn" onClick={toResult} disabled={!resultReady}>結果へ</button>
-        </div>
         {!resultReady && (
-          <div className="hint">meeting_result.json の生成完了後にボタンが有効になります。</div>
+          <p className="hint" role="note">
+            meeting_result.json の生成完了後に「結果へ」ボタンが有効になります。
+          </p>
         )}
-      </div>
+      </Card>
 
-      <aside className="card">
-        <h3 className="title-sm">要約</h3>
-        <pre className="summary">{memoSummary}</pre>
+      <Card as="aside" title="要約" headingLevel="h2" id="meeting-summary">
+        <pre className="summary" aria-live="polite">
+          {memoSummary}
+        </pre>
         <div className="hint">
           {resultReady
             ? "バックエンドから受け取った最終要約です。"
@@ -179,7 +195,7 @@ export default function Meeting() {
             ))}
           </div>
         )}
-      </aside>
+      </Card>
     </section>
   );
 }
