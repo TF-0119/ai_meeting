@@ -194,6 +194,156 @@
   gap: 16px;
 }
 
+.meeting-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.meeting-list__item {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--color-surface-layer) 90%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+.meeting-list__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-strong);
+}
+
+.meeting-list__title a {
+  color: inherit;
+  text-decoration: none;
+  transition: color var(--transition-base);
+}
+
+.meeting-list__title a:hover,
+.meeting-list__title a:focus-visible {
+  color: var(--color-accent);
+  outline: none;
+}
+
+.meeting-list__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.meeting-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+  background: color-mix(in srgb, var(--color-surface-muted) 55%, transparent);
+  color: var(--color-text-muted);
+}
+
+.meeting-status-badge--alive {
+  background: var(--color-success-soft);
+  border-color: color-mix(in srgb, var(--color-success) 55%, transparent);
+  color: var(--color-success);
+}
+
+.meeting-status-badge--stopped {
+  background: color-mix(in srgb, var(--color-surface-muted) 70%, transparent);
+  border-color: var(--color-border);
+}
+
+.meeting-status-badge--result {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent-border);
+  color: var(--color-accent);
+}
+
+.meeting-status-badge--pending {
+  background: var(--color-warning-soft);
+  border-color: color-mix(in srgb, var(--color-warning) 55%, transparent);
+  color: var(--color-warning);
+}
+
+.meeting-list__summary {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.meeting-list__summary--empty {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.meeting-list__summary-label {
+  font-weight: 600;
+  margin-right: 6px;
+  color: var(--color-text-muted);
+}
+
+.meeting-list__summary-text {
+  word-break: break-word;
+}
+
+.meeting-list__meta {
+  margin: 0;
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.meeting-list__meta-label {
+  font-weight: 600;
+}
+
+.meeting-list__meta-value {
+  color: var(--color-text);
+}
+
+.meeting-list__actions {
+  margin: 0;
+}
+
+.meeting-list__result-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-accent-border);
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: none;
+  transition: background var(--transition-base), color var(--transition-base), transform var(--transition-fast);
+}
+
+.meeting-list__result-link:hover,
+.meeting-list__result-link:focus-visible {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  color: var(--color-accent-strong);
+}
+
+.meeting-list__result-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 :where(.ui-button, .btn) {
   display: inline-flex;
   align-items: center;
