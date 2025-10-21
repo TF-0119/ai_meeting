@@ -40,6 +40,10 @@ def test_agent_prompt_includes_last_turn_context(tmp_path, monkeypatch, last_sum
 
     req = meeting._agent_prompt(agent, last_summary)
 
+    assert "--- アイデンティティ指針 ---" in req.system
+    assert "自由は創発の源" in req.system
+    assert "志向バイアス: 妥当性=0.35 / 新規性=0.40 / 整合性=0.25" in req.system
+
     # システムプロンプトがJSON形式と禁止語回避を指示していること
     assert "出力形式: 下記キーを持つ JSON オブジェクトのみを返す。" in req.system
     assert '{"diverge": [{"hypothesis": "...", "assumptions": []}], "learn": [{"insight": "...", "why": "...", "links": []}], "converge": [{"commit": "...", "reason": "..."}], "next_goal": "..."}' in req.system
