@@ -201,6 +201,96 @@ function normalizeFilePath(path, meetingId) {
   return `/logs/${meetingId}/${path}`;
 }
 
+// 会議情報APIから受け取ったフィールドを最小限の形に整形
+function normalizeMeetingRecord(source = {}) {
+  const id = typeof source.id === "string" && source.id.trim() ? source.id : String(source.id ?? "");
+  const topic = typeof source.topic === "string" ? source.topic : "";
+  const backend = typeof source.backend === "string" ? source.backend : "";
+  const startedAt = typeof source.started_at === "string" ? source.started_at : "";
+  return {
+    id,
+    topic,
+    backend,
+    started_at: startedAt,
+    is_alive: Boolean(source.is_alive),
+    has_live: Boolean(source.has_live),
+    has_result: Boolean(source.has_result),
+  };
+}
+
+// 個別会議の状態（プロセスの生存や生成済みファイル）を取得
+export async function getMeetingStatus(meetingId) {
+  if (!meetingId) {
+    throw new Error("会議IDが指定されていません。");
+  }
+
+  const res = await fetch(withCacheBuster(`/api/meetings/${encodeURIComponent(meetingId)}`), {
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const message = text.trim() ? `会議状態の取得に失敗しました: ${text.trim()}` : `会議状態の取得に失敗しました (HTTP ${res.status}).`;
+    throw new Error(message);
+  }
+
+  const payload = await res.json().catch(() => null);
+  if (!payload || payload.ok === false) {
+    const detail = typeof payload?.error === "string" && payload.error.trim() ? payload.error.trim() : "会議状態の取得に失敗しました。";
+    throw new Error(detail);
+  }
+
+  return normalizeMeetingRecord({ ...payload, id: payload?.id ?? meetingId });
+}
+
+// 会議一覧と各会議の状態をまとめて取得
+export async function listMeetings() {
+  const res = await fetch(withCacheBuster("/api/meetings"), { cache: "no-store" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    const message = text.trim() ? `会議一覧の取得に失敗しました: ${text.trim()}` : `会議一覧の取得に失敗しました (HTTP ${res.status}).`;
+    throw new Error(message);
+  }
+
+  const payload = await res.json().catch(() => ({}));
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    return [];
+  }
+
+  const baseList = items.map((item) => normalizeMeetingRecord(item));
+
+  const enriched = await Promise.all(
+    baseList.map(async (entry) => {
+      if (!entry.id) return entry;
+      try {
+        const status = await getMeetingStatus(entry.id);
+        return {
+          ...entry,
+          ...status,
+          started_at: status.started_at || entry.started_at,
+          topic: status.topic || entry.topic,
+          backend: status.backend || entry.backend,
+        };
+      } catch {
+        return entry;
+      }
+    })
+  );
+
+  return enriched
+    .slice()
+    .sort((a, b) => {
+      const aKey = a.started_at || "";
+      const bKey = b.started_at || "";
+      if (aKey && bKey && aKey !== bKey) {
+        return aKey > bKey ? -1 : 1;
+      }
+      if (aKey && !bKey) return -1;
+      if (!aKey && bKey) return 1;
+      return a.id.localeCompare(b.id);
+    });
+}
+
 export async function stopMeeting(meetingId) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
