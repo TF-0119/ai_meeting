@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Card from "../components/Card";
-import { listMeetings, getMeetingStatusDetail } from "../services/api";
+import Button from "../components/Button";
+import { listMeetings, getMeetingStatusDetail, stopMeeting } from "../services/api";
 
 const MEETING_REFRESH_INTERVAL_MS = 8000;
 const STATUS_REFRESH_INTERVAL_MS = 5000;
@@ -25,6 +26,8 @@ export default function Ongoing() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [statusMap, setStatusMap] = useState({});
+  const [stoppingMap, setStoppingMap] = useState({});
+  const fetchMeetingsRef = useRef(async () => {});
 
   useEffect(() => {
     let active = true;
@@ -49,6 +52,8 @@ export default function Ongoing() {
         setIsLoading(false);
       }
     };
+
+    fetchMeetingsRef.current = fetchMeetings;
 
     fetchMeetings(true);
     const timerId = setInterval(() => {
@@ -107,6 +112,46 @@ export default function Ongoing() {
     };
   }, [meetings]);
 
+  const handleStop = async (meetingId) => {
+    if (!meetingId || stoppingMap[meetingId]) {
+      return;
+    }
+
+    setStoppingMap((prev) => ({ ...prev, [meetingId]: true }));
+
+    let stopError = null;
+    try {
+      await stopMeeting(meetingId);
+    } catch (err) {
+      stopError = err;
+    }
+
+    if (stopError) {
+      const message = stopError instanceof Error && stopError.message
+        ? stopError.message
+        : "会議の中止に失敗しました。";
+      window.alert(message);
+      setStoppingMap((prev) => {
+        const next = { ...prev };
+        delete next[meetingId];
+        return next;
+      });
+      return;
+    }
+
+    try {
+      await fetchMeetingsRef.current(true);
+    } catch (_) {
+      // 取得失敗時は fetchMeetings 側でエラー表示されるため、ここでは握りつぶす
+    } finally {
+      setStoppingMap((prev) => {
+        const next = { ...prev };
+        delete next[meetingId];
+        return next;
+      });
+    }
+  };
+
   let content;
   if (isLoading) {
     content = <p className="muted">読み込み中です…</p>;
@@ -139,6 +184,7 @@ export default function Ongoing() {
           const summaryClassName = `meeting-list__summary${summaryTextRaw ? "" : " meeting-list__summary--empty"}`;
           const meetingUrl = `/meeting/${encodeURIComponent(meeting.id)}`;
           const resultUrl = `/result/${encodeURIComponent(meeting.id)}`;
+          const isStopping = Boolean(stoppingMap[meeting.id]);
           return (
             <li key={meeting.id} className="meeting-list__item">
               <h2 className="meeting-list__title">
@@ -168,13 +214,21 @@ export default function Ongoing() {
                 <span className="meeting-list__meta-label">ライブログ:</span>
                 <span className="meeting-list__meta-value">{meeting.has_live ? "あり" : "なし"}</span>
               </p>
-              {hasResult ? (
-                <p className="meeting-list__actions">
+              <p className="meeting-list__actions">
+                <Button
+                  variant="danger"
+                  onClick={() => handleStop(meeting.id)}
+                  disabled={!meeting.id || isStopping}
+                  isLoading={isStopping}
+                >
+                  {isStopping ? "停止中…" : "停止"}
+                </Button>
+                {hasResult ? (
                   <Link className="meeting-list__result-link" to={resultUrl}>
                     結果を見る
                   </Link>
-                </p>
-              ) : null}
+                ) : null}
+              </p>
             </li>
           );
         })}
