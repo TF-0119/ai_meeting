@@ -168,6 +168,7 @@
       "metrics_csv": "metrics.csv",
       "metrics_cpu_mem_png": "metrics_cpu_mem.png",
       "metrics_gpu_png": "metrics_gpu.png"
-    }
+    },
+    "semantic_core": []
   }
 }
