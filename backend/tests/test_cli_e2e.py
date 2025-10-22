@@ -83,6 +83,24 @@ def _load_baseline(name: str) -> dict:
     return json.loads((BASELINE_DIR / f"{name}.json").read_text(encoding="utf-8"))
 
 
+def _normalize_meeting_result(result: dict) -> dict:
+    """Remove volatile fields so that comparisons remain stable."""
+
+    data = json.loads(json.dumps(result))
+    core = data.get("semantic_core")
+    if isinstance(core, list):
+        data["semantic_core"] = {"open_issues": core}
+        core = data["semantic_core"]
+    if isinstance(core, dict):
+        issues = core.get("open_issues")
+        if isinstance(issues, list):
+            for issue in issues:
+                if isinstance(issue, dict):
+                    issue.pop("created_at", None)
+                    issue.pop("updated_at", None)
+    return data
+
+
 def test_cli_chat_mode_default(tmp_path: Path) -> None:
     """既定の短文チャットフローでログと KPI をスナップショット比較する。"""
 
@@ -115,7 +133,9 @@ def test_cli_chat_mode_default(tmp_path: Path) -> None:
     assert kpi == baseline["kpi"]
 
     result = _read_json(outdir / "meeting_result.json")
-    assert result == baseline["meeting_result"]
+    assert _normalize_meeting_result(result) == _normalize_meeting_result(
+        baseline["meeting_result"]
+    )
 
 
 def test_cli_legacy_flow_no_chat(tmp_path: Path) -> None:
@@ -153,7 +173,9 @@ def test_cli_legacy_flow_no_chat(tmp_path: Path) -> None:
     assert kpi == baseline["kpi"]
 
     result = _read_json(outdir / "meeting_result.json")
-    assert result == baseline["meeting_result"]
+    assert _normalize_meeting_result(result) == _normalize_meeting_result(
+        baseline["meeting_result"]
+    )
 
 
 def test_cli_accepts_custom_ollama_url(tmp_path: Path) -> None:

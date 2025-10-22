@@ -242,8 +242,41 @@
       "kpi_json": "kpi.json",
       "metrics_csv": "metrics.csv",
       "metrics_cpu_mem_png": "metrics_cpu_mem.png",
-      "metrics_gpu_png": "metrics_gpu.png"
+      "metrics_gpu_png": "metrics_gpu.png",
+      "semantic_core_json": "semantic_core.json",
+      "semantic_core_jsonl": "semantic_core.jsonl"
     },
-    "semantic_core": []
+    "semantic_core": {
+      "open_issues": [
+        {
+          "text": "差分: {\"diverge\": [{\"hypothesis\": \"Alice視点で代替案を点検し、Alice視点: 仮説を検証する課題を補強\", \"assumptions\": []}], \"learn\": [{\"insight\": \"得た知見として…",
+          "source": "turn_summary",
+          "weight": 0.85,
+          "mentions": 1,
+          "metadata": {
+            "turn_index": 1,
+            "speaker": "Alice",
+            "reported_by": "Alice",
+            "phase_id": 0,
+            "phase_kind": "discussion",
+            "phase_turn": 0
+          }
+        },
+        {
+          "text": "差分: {\"diverge\": [{\"hypothesis\": \"Bob視点で代替案を点検し、Bob視点: 仮説を検証する課題を補強\", \"assumptions\": []}], \"learn\": [{\"insight\": \"得た知見としてBob視…",
+          "source": "turn_summary",
+          "weight": 0.85,
+          "mentions": 1,
+          "metadata": {
+            "turn_index": 2,
+            "speaker": "Bob",
+            "reported_by": "Bob",
+            "phase_id": 0,
+            "phase_kind": "discussion",
+            "phase_turn": 1
+          }
+        }
+      ]
+    }
   }
 }
