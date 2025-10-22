@@ -1,5 +1,8 @@
 // frontend/src/services/api.js
 
+import { createInitials } from "@/utils/text";
+import { deriveFlowTrendKind, flowTrendToSymbol } from "@/utils/flow";
+
 // キャッシュバスター用のクエリを付与
 function withCacheBuster(url) {
   const sep = url.includes("?") ? "&" : "?";
@@ -136,6 +139,7 @@ function normalizePersona(raw) {
  * @property {number|null} progress 進行率（0-1想定）。
  * @property {string|null} status 状態。
  * @property {number|null} ordinal 通番。
+ * @property {number|null} base フェーズ開始ターン（存在する場合）。
  */
 
 function normalizePhase(rawPhase) {
@@ -166,6 +170,7 @@ function normalizePhase(rawPhase) {
   const progressCandidate = rawPhase.progress ?? rawPhase.ratio ?? rawPhase.percent;
   const statusCandidate = rawPhase.status ?? rawPhase.state;
   const ordinalCandidate = rawPhase.ordinal ?? rawPhase.order ?? rawPhase.sequence;
+  const baseCandidate = rawPhase.base ?? rawPhase.start ?? rawPhase.start_turn;
 
   return {
     id: toOptionalString(idCandidate),
@@ -177,6 +182,7 @@ function normalizePhase(rawPhase) {
     progress: toOptionalNumber(progressCandidate),
     status: toOptionalString(statusCandidate),
     ordinal: toOptionalNumber(ordinalCandidate),
+    base: toOptionalNumber(baseCandidate),
   };
 }
 
@@ -264,8 +270,11 @@ function pickIcon(row, persona) {
  * @typedef {Object} LiveTimelineEntry
  * @property {string|number} id 一意な識別子。欠損時は行番号を補う。
  * @property {string} speaker 発話者名。
+ * @property {string|null} speaker_name 表示用の話者名。欠損時は speaker を利用。
+ * @property {string|null} speaker_initials 話者のイニシャル。
  * @property {string} text 本文テキスト。
  * @property {string|null} ts タイムスタンプ。
+ * @property {string|null} avatar アバター画像やアイコン。
  * @property {LivePhaseInfo|null} phase フェーズ情報。欠損時は null。
  * @property {string|null} phaseId フェーズID。フェーズ情報が無ければ null。
  * @property {string|null} phaseKind フェーズ種別。フェーズ情報が無ければ null。
@@ -274,6 +283,8 @@ function pickIcon(row, persona) {
  * @property {LiveLabeledEntity|null} flow 採用フロー。欠損時は null。
  * @property {LivePersona|null} persona ペルソナ・キャラクタ情報。欠損時は null。
  * @property {string|null} icon 表示用アイコン。欠損時は null。
+ * @property {"forward"|"steady"|"reflect"|null} flowTrendKind 進行方向種別。
+ * @property {string|null} flowTrend 進行方向を表す矢印など。
  */
 
 export function parseLiveRows(rows) {
@@ -310,22 +321,47 @@ export function parseLiveRows(rows) {
     }
 
     const metadata = enrichLiveRow(r);
+    const rawSpeaker = toOptionalString(r.speaker ?? r.role ?? r.agent);
+    const personaName = toOptionalString(metadata.persona?.label ?? metadata.persona?.name);
+    const explicitName = toOptionalString(
+      r.speaker_name
+      ?? r.speakerName
+      ?? r.display_name
+      ?? r.displayName
+    );
+    const speakerName = explicitName ?? rawSpeaker ?? personaName ?? "unknown";
+    const initialsCandidate = toOptionalString(r.speaker_initials ?? r.speakerInitials ?? null);
+    const speakerInitials = initialsCandidate ?? (speakerName ? createInitials(speakerName) : null);
+    const avatarCandidate = toOptionalString(
+      r.avatar
+      ?? r.avatar_url
+      ?? r.avatarUrl
+      ?? r.icon
+      ?? r.image
+      ?? null,
+    );
+    const flowSource = r.flow_trend
+      ?? r.flowTrend
+      ?? r.flow_direction
+      ?? r.flowDirection
+      ?? r.flow
+      ?? metadata.flow;
+    const flowTrendKind = deriveFlowTrendKind(metadata.phaseKind, flowSource);
+    const flowTrend = flowTrendToSymbol(flowTrendKind);
 
-    const phase = typeof r.phase === "object" && r.phase !== null ? r.phase : null;
-    const flow = typeof r.flow === "object" || typeof r.flow === "string" || typeof r.flow === "number"
-      ? r.flow
-      : null;
     timeline.push({
       id: r.id ?? r.index ?? r.turn ?? i + 1,
-      speaker: r.speaker ?? r.role ?? r.agent ?? "unknown",
+      speaker: speakerName,
+      speaker_name: speakerName ?? null,
+      speaker_initials: speakerInitials,
       text: r.text ?? r.message ?? r.content ?? "",
       ts: r.ts ?? r.time ?? r.timestamp ?? null,
       ...metadata,
-      intent: r.intent ?? r.intent_tag ?? r.intentTag ?? null,
-      phase,
-      flow,
-      round: r.round ?? null,
-      turn: r.turn ?? null,
+      avatar: avatarCandidate ?? metadata.avatar ?? metadata.icon ?? null,
+      flowTrendKind,
+      flowTrend,
+      round: toOptionalNumber(r.round) ?? null,
+      turn: toOptionalNumber(r.turn) ?? null,
     });
   });
 
@@ -339,6 +375,7 @@ function enrichLiveRow(row) {
   const persona = normalizePersona(row.persona ?? row.profile ?? row.character ?? null);
   const icon = pickIcon(row, persona);
   const progressHint = deriveProgressHint(phase);
+  const avatar = toOptionalString(row.avatar ?? row.avatar_url ?? row.avatarUrl ?? null) ?? icon;
 
   return {
     phase,
@@ -349,6 +386,7 @@ function enrichLiveRow(row) {
     flow,
     persona,
     icon,
+    avatar,
   };
 }
 
