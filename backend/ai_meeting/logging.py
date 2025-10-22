@@ -18,6 +18,7 @@ class LiveLogWriter:
         outdir: Optional[str] = None,
         ui_minimal: bool = True,
         summary_probe_filename: str = "summary_probe.json",
+        summary_probe_phase_filename: str = "summary_probe_phase.jsonl",
         *,
         enable_markdown: bool = True,
         enable_jsonl: bool = True,
@@ -37,6 +38,7 @@ class LiveLogWriter:
         # ★ 思考ログ（デバッグ用・本文には出さない）
         self.thoughts_log = base_dir / "thoughts.jsonl"
         self.summary_probe_log = base_dir / summary_probe_filename
+        self.phase_summary_log = base_dir / summary_probe_phase_filename
 
         # ヘッダを書いておく
         if self.md:
@@ -57,6 +59,7 @@ class LiveLogWriter:
             self.jsonl.touch()
         self.thoughts_log.touch()
         self.summary_probe_log.touch()
+        self.phase_summary_log.touch()
 
     def append_turn(
         self,
@@ -158,6 +161,13 @@ class LiveLogWriter:
         """要約プローブの結果を JSONL 形式で追記する。"""
 
         with self.summary_probe_log.open("a", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            f.flush()
+
+    def append_phase_summary(self, payload: Dict[str, Any]) -> None:
+        """フェーズ単位の要約結果を JSONL 形式で追記する。"""
+
+        with self.phase_summary_log.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
             f.flush()
 

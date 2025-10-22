@@ -198,12 +198,14 @@ class Meeting:
         self.temperature = rp["temperature"]
         self.critique_passes = rp["critique_passes"]
         self._summary_probe = SummaryProbe(self.backend, self.cfg)
+        self._semantic_core: List[Dict[str, Any]] = []
         self._pending = PendingTracker()  # 残課題トラッカー
         self.logger = LiveLogWriter(
             self.cfg.topic,
             outdir=self.cfg.outdir,
             ui_minimal=self.cfg.ui_minimal,
             summary_probe_filename=self.cfg.summary_probe_filename,
+            summary_probe_phase_filename=self.cfg.summary_probe_phase_filename,
             enable_markdown=self.cfg.log_markdown_enabled,
             enable_jsonl=self.cfg.log_jsonl_enabled,
         )
@@ -296,7 +298,13 @@ class Meeting:
         self._phases.append(closed_state)
         return closed_state
 
-    def _phase_payload(self, event: PhaseEvent, state: Optional[PhaseState]) -> Dict:
+    def _phase_payload(
+        self,
+        event: PhaseEvent,
+        state: Optional[PhaseState],
+        *,
+        summary: Optional[Dict[str, Any]] = None,
+    ) -> Dict:
         """フェーズイベントのログ用ペイロードを生成する。"""
 
         payload: Dict = {
@@ -305,6 +313,8 @@ class Meeting:
         }
         if state:
             payload["phase"] = self._phase_state_to_dict(state)
+        if summary:
+            payload["phase_summary"] = summary
         return payload
 
     def _phase_round_index(self, state: PhaseState, phase_turn: int) -> int:
@@ -483,7 +493,19 @@ class Meeting:
             return
         if event.status == "closed":
             closed_state = self._end_phase(event)
-            self.logger.append_phase(self._phase_payload(event, closed_state))
+            phase_summary = None
+            if closed_state:
+                phase_summary = self._build_phase_summary_record(event, closed_state)
+                if phase_summary:
+                    self._log_phase_summary(phase_summary)
+                    try:
+                        snapshot = json.loads(json.dumps(phase_summary, ensure_ascii=False))
+                    except Exception:
+                        snapshot = phase_summary.copy()
+                    self._semantic_core.append(snapshot)
+            self.logger.append_phase(
+                self._phase_payload(event, closed_state, summary=phase_summary)
+            )
             if self.cfg.max_phases and len(self._phases) >= self.cfg.max_phases:
                 return
             next_kind = event.kind or (closed_state.kind if closed_state else "discussion")
@@ -1309,6 +1331,94 @@ class Meeting:
             return {"summary": ""}
         return result
 
+    def _build_phase_summary_record(
+        self, event: PhaseEvent, state: PhaseState
+    ) -> Optional[Dict[str, Any]]:
+        """フェーズクローズ時の要約記録を構築する。"""
+
+        if not self.cfg.summary_probe_enabled:
+            return None
+
+        indices = list(state.turn_indices)
+        if not indices:
+            end_turn = max(state.start_turn, event.end_turn)
+            indices = list(range(state.start_turn, end_turn + 1))
+
+        seen: Set[int] = set()
+        ordered_indices: List[int] = []
+        for idx in indices:
+            if idx < 1 or idx > len(self.history) or idx in seen:
+                continue
+            seen.add(idx)
+            ordered_indices.append(idx)
+
+        if not ordered_indices:
+            return None
+
+        turn_pairs: List[Tuple[int, Turn]] = [
+            (idx, self.history[idx - 1]) for idx in ordered_indices
+        ]
+
+        entries = [
+            {
+                "index": idx,
+                "order": order,
+                "speaker": turn.speaker,
+                "text": extract_cycle_text(turn.content),
+            }
+            for order, (idx, turn) in enumerate(turn_pairs, start=1)
+        ]
+        input_text = "\n".join(f"{entry['speaker']}: {entry['text']}" for entry in entries)
+        default_params = {
+            "temperature": self.cfg.summary_probe_temperature,
+            "max_tokens": self.cfg.summary_probe_max_tokens,
+        }
+
+        try:
+            summary_payload = self._summary_probe.generate_phase_summary(
+                [turn for _, turn in turn_pairs]
+            )
+        except Exception as exc:  # noqa: BLE001 - LLM呼び出し失敗時は握りつぶす
+            self.logger.append_warning(
+                "phase_summary_failed",
+                context={
+                    "error": str(exc),
+                    "phase_id": state.id,
+                    "turn_indices": ordered_indices,
+                },
+            )
+            summary_payload = {
+                "turn_count": len(entries),
+                "summary": "",
+                "input_text": input_text,
+                "turns": [
+                    {"speaker": entry["speaker"], "text": entry["text"]}
+                    for entry in entries
+                ],
+                "parameters": default_params,
+            }
+
+        record: Dict[str, Any] = {
+            "phase": {
+                "id": state.id,
+                "kind": state.kind,
+                "start_turn": state.start_turn,
+                "end_turn": event.end_turn,
+                "turn_indices": ordered_indices,
+            },
+            "turn_count": summary_payload.get("turn_count", len(entries)),
+            "summary": summary_payload.get("summary", ""),
+            "input_text": summary_payload.get("input_text", input_text),
+            "parameters": summary_payload.get("parameters", default_params),
+            "turns": entries,
+        }
+
+        speakers = [entry["speaker"] for entry in entries]
+        if speakers:
+            record["speakers"] = speakers
+
+        return record
+
     def _log_summary_probe(
         self,
         *,
@@ -1343,6 +1453,24 @@ class Meeting:
                     "round": round_idx,
                     "turn_index": len(self.history),
                     "speaker": turn.speaker,
+                },
+            )
+
+    def _log_phase_summary(self, payload: Dict[str, Any]) -> None:
+        """フェーズ要約ログを安全に追記する。"""
+
+        if not self.cfg.summary_probe_phase_log_enabled:
+            return
+        try:
+            self.logger.append_phase_summary(payload)
+        except Exception as exc:  # noqa: BLE001 - ログ記録では失敗を握りつぶす
+            phase_info = payload.get("phase", {})
+            self.logger.append_warning(
+                "phase_summary_logging_failed",
+                context={
+                    "error": str(exc),
+                    "phase_id": phase_info.get("id"),
+                    "kind": phase_info.get("kind"),
                 },
             )
 
@@ -1445,7 +1573,21 @@ class Meeting:
                     kind=current_phase.kind,
                 )
                 closed_state = self._end_phase(closing_event)
-                self.logger.append_phase(self._phase_payload(closing_event, closed_state))
+                phase_summary = None
+                if closed_state:
+                    phase_summary = self._build_phase_summary_record(
+                        closing_event, closed_state
+                    )
+                    if phase_summary:
+                        self._log_phase_summary(phase_summary)
+                        try:
+                            snapshot = json.loads(json.dumps(phase_summary, ensure_ascii=False))
+                        except Exception:
+                            snapshot = phase_summary.copy()
+                        self._semantic_core.append(snapshot)
+                self.logger.append_phase(
+                    self._phase_payload(closing_event, closed_state, summary=phase_summary)
+                )
                 if self.cfg.max_phases is None:
                     break
                 if len(self._phases) >= self.cfg.max_phases:
@@ -1757,7 +1899,19 @@ class Meeting:
                 kind=self._phase_state.kind,
             )
             closed_state = self._end_phase(closing_event)
-            self.logger.append_phase(self._phase_payload(closing_event, closed_state))
+            phase_summary = None
+            if closed_state:
+                phase_summary = self._build_phase_summary_record(closing_event, closed_state)
+                if phase_summary:
+                    self._log_phase_summary(phase_summary)
+                    try:
+                        snapshot = json.loads(json.dumps(phase_summary, ensure_ascii=False))
+                    except Exception:
+                        snapshot = phase_summary.copy()
+                    self._semantic_core.append(snapshot)
+            self.logger.append_phase(
+                self._phase_payload(closing_event, closed_state, summary=phase_summary)
+            )
 
         # --- 残課題消化ラウンド（任意） ---
         if self.cfg.resolve_phase and self._pending.items:
@@ -1839,6 +1993,10 @@ class Meeting:
         )
         if self.cfg.summary_probe_log_enabled:
             artifact_candidates["summary_probe_json"] = base_dir / self.cfg.summary_probe_filename
+        if self.cfg.summary_probe_phase_log_enabled:
+            artifact_candidates["summary_probe_phase_json"] = (
+                base_dir / self.cfg.summary_probe_phase_filename
+            )
         files = {key: _relative(path) for key, path in artifact_candidates.items()}
         with result_path.open("w", encoding="utf-8") as f:
             json.dump(
@@ -1853,6 +2011,7 @@ class Meeting:
                     "agents": [a.model_dump() for a in self.cfg.agents],
                     "turns": [t.__dict__ for t in self.history],
                     "phases": self._serialize_phases(),
+                    "semantic_core": self._semantic_core,
                     "final": final,
                     "kpi": kpi_result or {},
                     "files": files,
@@ -2062,7 +2221,19 @@ class Meeting:
             kind=state.kind,
         )
         closed_state = self._end_phase(closing_event)
-        self.logger.append_phase(self._phase_payload(closing_event, closed_state))
+        phase_summary = None
+        if closed_state:
+            phase_summary = self._build_phase_summary_record(closing_event, closed_state)
+            if phase_summary:
+                self._log_phase_summary(phase_summary)
+                try:
+                    snapshot = json.loads(json.dumps(phase_summary, ensure_ascii=False))
+                except Exception:
+                    snapshot = phase_summary.copy()
+                self._semantic_core.append(snapshot)
+        self.logger.append_phase(
+            self._phase_payload(closing_event, closed_state, summary=phase_summary)
+        )
         return last_summary, global_turn
 
     def _concat_recent_text(self, window: int) -> str:
