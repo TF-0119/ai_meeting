@@ -169,6 +169,11 @@ SEMANTIC_CORE_WEIGHTS: Dict[str, float] = {
     "open_issues": 0.85,
 }
 
+SEMANTIC_CORE_CATEGORY_LABELS: Dict[str, str] = {
+    "key_points": "重要事項",
+    "open_issues": "未解決事項",
+}
+
 
 def _resolve_personality_seed(cfg: MeetingConfig, test_mode: bool) -> Optional[int]:
     """個性テンプレート抽選用の乱数シードを決定する。"""
@@ -1018,6 +1023,11 @@ class Meeting:
         memory_text = self._format_agent_memory(agent.name)
         if memory_text:
             user_lines.insert(1, memory_text)
+        shared_block = self._semantic_core_prompt_block(
+            "共有メモ（過去フェーズからの短文要点）:"
+        )
+        if shared_block:
+            user_lines.insert(1, shared_block)
         user = "\n".join(user_lines)
         req = LLMRequest(
             system=sys,
@@ -1434,6 +1444,52 @@ class Meeting:
             return ""
         return "\n".join(f"- {line}" for line in points)
 
+    def _semantic_core_prompt_lines(self) -> List[str]:
+        """共有メモとして提示するセマンティックコアの要点を生成する。"""
+
+        if not getattr(self.cfg, "semantic_core_prompt_enabled", True):
+            return []
+        if self._semantic_core_store.is_empty():
+            return []
+
+        categories = getattr(self.cfg, "semantic_core_prompt_categories", []) or []
+        if not categories:
+            categories = self._semantic_core_store.categories()
+
+        per_category = max(0, int(getattr(self.cfg, "semantic_core_prompt_per_category", 0)))
+        if per_category <= 0:
+            return []
+
+        window = getattr(self.cfg, "semantic_core_prompt_window", 0)
+        weight_min = getattr(self.cfg, "semantic_core_prompt_weight_min", 0.0)
+
+        lines: List[str] = []
+        for category in categories:
+            items = self._semantic_core_store.get_ranked_items(
+                category,
+                limit=per_category,
+                window=window if isinstance(window, int) and window > 0 else None,
+                weight_min=weight_min,
+            )
+            if not items:
+                continue
+            label = SEMANTIC_CORE_CATEGORY_LABELS.get(category, category)
+            for item in items:
+                text = item.text.strip()
+                if not text:
+                    continue
+                lines.append(f"- {label}: {text}")
+
+        return lines
+
+    def _semantic_core_prompt_block(self, header: str) -> str:
+        """共有メモのヘッダ付きブロック文字列を返す。"""
+
+        lines = self._semantic_core_prompt_lines()
+        if not lines:
+            return ""
+        return "\n".join([header, *lines])
+
     def _agent_prompt(self, agent: AgentConfig, last_summary: str) -> LLMRequest:
         # ベースとなる役割プロンプト
         sys_prompt = agent.system
@@ -1506,6 +1562,11 @@ class Meeting:
         memory_text = self._format_agent_memory(agent.name)
         if memory_text:
             prior_msgs.append({"role": "user", "content": memory_text})
+        shared_block = self._semantic_core_prompt_block(
+            "共有メモ（過去フェーズの要点）:"
+        )
+        if shared_block:
+            prior_msgs.append({"role": "user", "content": shared_block})
         # Step5/7: 非公開ヒント（ショック/コントローラ）。本文に「ヒント」等は書かない。
         # 何も入れない（パラメータ側で制御）
         return LLMRequest(

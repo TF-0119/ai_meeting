@@ -78,6 +78,43 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default=None,
         help="プロンプトに含める覚書数。未指定なら MeetingConfig の既定値を利用",
     )
+    ap.add_argument(
+        "--semantic-core-prompt",
+        dest="semantic_core_prompt_enabled",
+        action="store_true",
+        default=None,
+        help="セマンティックコア共有メモのプロンプト注入を有効化（既定で有効）",
+    )
+    ap.add_argument(
+        "--no-semantic-core-prompt",
+        dest="semantic_core_prompt_enabled",
+        action="store_false",
+        help="セマンティックコア共有メモのプロンプト注入を無効化",
+    )
+    ap.add_argument(
+        "--semantic-core-categories",
+        nargs="+",
+        default=None,
+        help="共有メモに含めるカテゴリ順（例: key_points open_issues）",
+    )
+    ap.add_argument(
+        "--semantic-core-per-category",
+        type=int,
+        default=None,
+        help="カテゴリごとに注入する共有メモ件数",
+    )
+    ap.add_argument(
+        "--semantic-core-window",
+        type=int,
+        default=None,
+        help="共有メモ候補として考慮する最新更新件数（0で全件）",
+    )
+    ap.add_argument(
+        "--semantic-core-weight-min",
+        type=float,
+        default=None,
+        help="共有メモとして注入する最小重要度（weight）",
+    )
     ap.add_argument("--outdir", default=None, help="ログ出力先ディレクトリ（未指定なら自動生成）")
     ap.add_argument(
         "--summary-probe",
@@ -253,9 +290,68 @@ def build_meeting_config(args: argparse.Namespace) -> MeetingConfig:
 
     agent_memory_limit_default = MeetingConfig.model_fields["agent_memory_limit"].default
     agent_memory_window_default = MeetingConfig.model_fields["agent_memory_window"].default
+    semantic_core_prompt_enabled_default = MeetingConfig.model_fields[
+        "semantic_core_prompt_enabled"
+    ].default
+    semantic_core_categories_factory = MeetingConfig.model_fields[
+        "semantic_core_prompt_categories"
+    ].default_factory
+    semantic_core_per_category_default = MeetingConfig.model_fields[
+        "semantic_core_prompt_per_category"
+    ].default
+    semantic_core_window_default = MeetingConfig.model_fields[
+        "semantic_core_prompt_window"
+    ].default
+    semantic_core_weight_min_default = MeetingConfig.model_fields[
+        "semantic_core_prompt_weight_min"
+    ].default
     monitor_default = MeetingConfig.model_fields["monitor"].default
     monitor_arg = getattr(args, "monitor", None)
     monitor_value = monitor_default if monitor_arg is None else bool(monitor_arg)
+
+    semantic_core_prompt_enabled_arg = getattr(
+        args, "semantic_core_prompt_enabled", None
+    )
+    semantic_core_prompt_enabled_value = (
+        semantic_core_prompt_enabled_default
+        if semantic_core_prompt_enabled_arg is None
+        else bool(semantic_core_prompt_enabled_arg)
+    )
+
+    if getattr(args, "semantic_core_categories", None) is None:
+        semantic_core_categories_value = (
+            semantic_core_categories_factory()
+            if callable(semantic_core_categories_factory)
+            else []
+        )
+    else:
+        semantic_core_categories_value = [
+            token.strip()
+            for token in args.semantic_core_categories
+            if isinstance(token, str) and token.strip()
+        ]
+        if not semantic_core_categories_value:
+            semantic_core_categories_value = (
+                semantic_core_categories_factory()
+                if callable(semantic_core_categories_factory)
+                else []
+            )
+
+    semantic_core_per_category_value = (
+        semantic_core_per_category_default
+        if getattr(args, "semantic_core_per_category", None) is None
+        else max(0, int(args.semantic_core_per_category))
+    )
+    semantic_core_window_value = (
+        semantic_core_window_default
+        if getattr(args, "semantic_core_window", None) is None
+        else max(0, int(args.semantic_core_window))
+    )
+    semantic_core_weight_min_value = (
+        semantic_core_weight_min_default
+        if getattr(args, "semantic_core_weight_min", None) is None
+        else max(0.0, float(args.semantic_core_weight_min))
+    )
 
     cfg = MeetingConfig(
         topic=args.topic,
@@ -279,6 +375,11 @@ def build_meeting_config(args: argparse.Namespace) -> MeetingConfig:
         agent_memory_window=max(0, int(args.agent_memory_window))
         if args.agent_memory_window is not None
         else agent_memory_window_default,
+        semantic_core_prompt_enabled=semantic_core_prompt_enabled_value,
+        semantic_core_prompt_categories=semantic_core_categories_value,
+        semantic_core_prompt_per_category=semantic_core_per_category_value,
+        semantic_core_prompt_window=semantic_core_window_value,
+        semantic_core_prompt_weight_min=semantic_core_weight_min_value,
         outdir=getattr(args, "outdir", None),
         equilibrium=getattr(args, "equilibrium", False),
         monitor=monitor_value,
