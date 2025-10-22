@@ -72,6 +72,24 @@ def _read_jsonl(path: Path) -> list[dict]:
     return out
 
 
+def _normalize_meeting_result(payload: dict) -> dict:
+    """Drop volatile fields from meeting_result for deterministic comparisons."""
+
+    data = json.loads(json.dumps(payload))
+    core = data.get("semantic_core")
+    if isinstance(core, list):
+        data["semantic_core"] = {"open_issues": core}
+        core = data["semantic_core"]
+    if isinstance(core, dict):
+        issues = core.get("open_issues")
+        if isinstance(issues, list):
+            for issue in issues:
+                if isinstance(issue, dict):
+                    issue.pop("created_at", None)
+                    issue.pop("updated_at", None)
+    return data
+
+
 def _compare(label: str, actual, expected) -> None:
     if actual == expected:
         return
@@ -117,7 +135,11 @@ def main() -> int:
             _compare(f"{case['name']} meeting_live", actual_log, baseline["meeting_live"])
 
             actual_result = json.loads((outdir / "meeting_result.json").read_text(encoding="utf-8"))
-            _compare(f"{case['name']} meeting_result", actual_result, baseline["meeting_result"])
+            _compare(
+                f"{case['name']} meeting_result",
+                _normalize_meeting_result(actual_result),
+                _normalize_meeting_result(baseline["meeting_result"]),
+            )
 
             actual_kpi = json.loads((outdir / "kpi.json").read_text(encoding="utf-8"))
             _compare(f"{case['name']} kpi", actual_kpi, baseline["kpi"])

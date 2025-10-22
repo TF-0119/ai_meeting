@@ -167,8 +167,10 @@
       "kpi_json": "kpi.json",
       "metrics_csv": "metrics.csv",
       "metrics_cpu_mem_png": "metrics_cpu_mem.png",
-      "metrics_gpu_png": "metrics_gpu.png"
+      "metrics_gpu_png": "metrics_gpu.png",
+      "semantic_core_json": "semantic_core.json",
+      "semantic_core_jsonl": "semantic_core.jsonl"
     },
-    "semantic_core": []
+    "semantic_core": {}
   }
 }

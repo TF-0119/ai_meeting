@@ -20,6 +20,7 @@ from .evaluation import KPIEvaluator
 from .llm import LLMRequest, OllamaBackend, OpenAIBackend
 from .logging import LiveLogWriter
 from .metrics import MetricsLogger
+from .semantic_core import SemanticCoreStore
 from .summary_probe import SummaryProbe
 from .testing import NullMetricsLogger, is_test_mode, setup_test_environment
 from .cycle_template import build_cycle_payload, extract_cycle_text
@@ -114,6 +115,61 @@ MEMORY_CATEGORY_PRIORITY: Dict[str, float] = {
 }
 
 
+SEMANTIC_CORE_HEADINGS: Dict[str, Tuple[str, ...]] = {
+    "key_points": (
+        "重要事項",
+        "重要論点",
+        "重要ポイント",
+        "重要",
+        "決定事項",
+        "合意事項",
+        "結論",
+        "ハイライト",
+        "成果",
+    ),
+    "open_issues": (
+        "残課題",
+        "未解決",
+        "未決",
+        "課題",
+        "懸念",
+        "TODO",
+        "ToDo",
+        "対応",
+        "要対応",
+        "アクション",
+        "検討事項",
+        "確認事項",
+    ),
+}
+
+SEMANTIC_CORE_KEYWORDS: Dict[str, Tuple[str, ...]] = {
+    "key_points": (
+        "重要",
+        "決定",
+        "合意",
+        "確定",
+        "結論",
+        "方針",
+    ),
+    "open_issues": (
+        "課題",
+        "懸念",
+        "未解決",
+        "保留",
+        "TODO",
+        "対応",
+        "検討",
+        "確認",
+    ),
+}
+
+SEMANTIC_CORE_WEIGHTS: Dict[str, float] = {
+    "key_points": 1.0,
+    "open_issues": 0.85,
+}
+
+
 def _resolve_personality_seed(cfg: MeetingConfig, test_mode: bool) -> Optional[int]:
     """個性テンプレート抽選用の乱数シードを決定する。"""
 
@@ -184,6 +240,8 @@ class Meeting:
             self._agent_memory[agent.name] = entries
         self._agent_personality_memory: Dict[str, str] = {}
         self._personality_profiles: Dict[str, PersonalityTemplate] = {}
+        self._semantic_core_store = SemanticCoreStore()
+        self._semantic_core_dirty = False
         # backend
         self._test_mode = is_test_mode()
         if self._test_mode:
@@ -198,7 +256,6 @@ class Meeting:
         self.temperature = rp["temperature"]
         self.critique_passes = rp["critique_passes"]
         self._summary_probe = SummaryProbe(self.backend, self.cfg)
-        self._semantic_core: List[Dict[str, Any]] = []
         self._pending = PendingTracker()  # 残課題トラッカー
         self.logger = LiveLogWriter(
             self.cfg.topic,
@@ -498,11 +555,29 @@ class Meeting:
                 phase_summary = self._build_phase_summary_record(event, closed_state)
                 if phase_summary:
                     self._log_phase_summary(phase_summary)
-                    try:
-                        snapshot = json.loads(json.dumps(phase_summary, ensure_ascii=False))
-                    except Exception:
-                        snapshot = phase_summary.copy()
-                    self._semantic_core.append(snapshot)
+                    summary_text = phase_summary.get("summary", "")
+                    metadata = {
+                        "phase_id": closed_state.id,
+                        "phase_kind": closed_state.kind,
+                        "turn_count": phase_summary.get("turn_count"),
+                    }
+                    phase_info = phase_summary.get("phase", {})
+                    if isinstance(phase_info, dict):
+                        metadata["turn_indices"] = phase_info.get("turn_indices")
+                    self._ingest_semantic_core_from_summary(
+                        summary_text,
+                        source="phase_summary",
+                        metadata=metadata,
+                    )
+                self._persist_semantic_core_state(
+                    reason="phase_closed",
+                    metadata={
+                        "phase_id": closed_state.id,
+                        "phase_kind": closed_state.kind,
+                        "status": event.status,
+                    },
+                    force=True,
+                )
             self.logger.append_phase(
                 self._phase_payload(event, closed_state, summary=phase_summary)
             )
@@ -644,6 +719,113 @@ class Meeting:
 
         return "\n".join(["--- アイデンティティ指針 ---", *sections])
 
+    def _extract_semantic_core_candidates(self, text: str) -> Dict[str, List[str]]:
+        """要約テキストからセマンティックコア候補を抽出する。"""
+
+        result: Dict[str, List[str]] = {"key_points": [], "open_issues": []}
+        if not text:
+            return result
+
+        active_category: Optional[str] = None
+        for raw_line in text.splitlines():
+            line = re.sub(r"^[\s\-\*\u30fb・•\d\.\)]{0,3}", "", raw_line).strip()
+            if not line:
+                active_category = None
+                continue
+
+            normalized = line.replace("：", ":")
+            heading_assigned = False
+            for category, headings in SEMANTIC_CORE_HEADINGS.items():
+                for heading in headings:
+                    if normalized.lower().startswith(heading.lower()):
+                        remainder = normalized[len(heading) :].lstrip(":： 　: ")
+                        if remainder:
+                            result[category].append(remainder.strip())
+                        else:
+                            active_category = category
+                        heading_assigned = True
+                        break
+                if heading_assigned:
+                    break
+            if heading_assigned:
+                continue
+
+            if active_category:
+                result[active_category].append(line)
+                continue
+
+            lowered = normalized.lower()
+            assigned = False
+            for category, keywords in SEMANTIC_CORE_KEYWORDS.items():
+                if any(keyword.lower() in lowered for keyword in keywords):
+                    result[category].append(line)
+                    assigned = True
+                    break
+            if assigned:
+                continue
+
+            if normalized.endswith("?") or normalized.endswith("？"):
+                result["open_issues"].append(line)
+
+        return result
+
+    def _ingest_semantic_core_from_summary(
+        self,
+        summary_text: str,
+        *,
+        source: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """要約テキストを解析してセマンティックコアへ反映する。"""
+
+        candidates = self._extract_semantic_core_candidates(summary_text)
+        added = False
+        for category, lines in candidates.items():
+            if not lines:
+                continue
+            weight = SEMANTIC_CORE_WEIGHTS.get(category, 0.8)
+            for line in lines:
+                changed = self._semantic_core_store.add(
+                    category,
+                    line,
+                    source=source,
+                    weight=weight,
+                    metadata=metadata,
+                )
+                added = added or changed
+        if added:
+            self._semantic_core_dirty = True
+        return added
+
+    def _persist_semantic_core_state(
+        self,
+        *,
+        reason: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        force: bool = False,
+    ) -> None:
+        """セマンティックコアの現在状態をログへ書き出す。"""
+
+        if not force and not self._semantic_core_dirty:
+            return
+        state = self._semantic_core_store.to_dict()
+        try:
+            self.logger.write_semantic_core(state)
+            self.logger.append_semantic_core_snapshot(
+                state,
+                reason=reason,
+                metadata=metadata,
+            )
+            self._semantic_core_dirty = False
+        except Exception as exc:  # noqa: BLE001 - ログ書き出し失敗は握りつぶす
+            self.logger.append_warning(
+                "semantic_core_logging_failed",
+                context={
+                    "error": str(exc),
+                    "reason": reason,
+                },
+            )
+
     def _record_agent_memory(
         self,
         agent_names: Any,
@@ -690,6 +872,20 @@ class Meeting:
                     "received_type": type(summary_payload).__name__,
                 },
             )
+        semantic_metadata = {
+            "turn_index": len(self.history),
+            "speaker": getattr(turn, "speaker", ""),
+        }
+        if speaker_name:
+            semantic_metadata["reported_by"] = speaker_name
+        if self._phase_state:
+            semantic_metadata.update(
+                {
+                    "phase_id": self._phase_state.id,
+                    "phase_kind": self._phase_state.kind,
+                    "phase_turn": self._phase_state.turn_count,
+                }
+            )
         if summary_text:
             seen_base: set[str] = set()
             for line in summary_text.splitlines():
@@ -698,6 +894,11 @@ class Meeting:
                     continue
                 base_entries.append(clean)
                 seen_base.add(clean)
+            self._ingest_semantic_core_from_summary(
+                summary_text,
+                source="turn_summary",
+                metadata=semantic_metadata,
+            )
         fallback = ""
         if isinstance(turn.content, str):
             fallback = extract_cycle_text(turn.content)
@@ -1580,11 +1781,29 @@ class Meeting:
                     )
                     if phase_summary:
                         self._log_phase_summary(phase_summary)
-                        try:
-                            snapshot = json.loads(json.dumps(phase_summary, ensure_ascii=False))
-                        except Exception:
-                            snapshot = phase_summary.copy()
-                        self._semantic_core.append(snapshot)
+                        summary_text = phase_summary.get("summary", "")
+                        metadata = {
+                            "phase_id": closed_state.id,
+                            "phase_kind": closed_state.kind,
+                            "turn_count": phase_summary.get("turn_count"),
+                        }
+                        phase_info = phase_summary.get("phase", {})
+                        if isinstance(phase_info, dict):
+                            metadata["turn_indices"] = phase_info.get("turn_indices")
+                        self._ingest_semantic_core_from_summary(
+                            summary_text,
+                            source="phase_summary",
+                            metadata=metadata,
+                        )
+                    self._persist_semantic_core_state(
+                        reason="phase_closed",
+                        metadata={
+                            "phase_id": closed_state.id,
+                            "phase_kind": closed_state.kind,
+                            "status": closing_event.status,
+                        },
+                        force=True,
+                    )
                 self.logger.append_phase(
                     self._phase_payload(closing_event, closed_state, summary=phase_summary)
                 )
@@ -1904,11 +2123,30 @@ class Meeting:
                 phase_summary = self._build_phase_summary_record(closing_event, closed_state)
                 if phase_summary:
                     self._log_phase_summary(phase_summary)
-                    try:
-                        snapshot = json.loads(json.dumps(phase_summary, ensure_ascii=False))
-                    except Exception:
-                        snapshot = phase_summary.copy()
-                    self._semantic_core.append(snapshot)
+                    summary_text = phase_summary.get("summary", "")
+                    metadata = {
+                        "phase_id": closed_state.id,
+                        "phase_kind": closed_state.kind,
+                        "turn_count": phase_summary.get("turn_count"),
+                    }
+                    phase_info = phase_summary.get("phase", {})
+                    if isinstance(phase_info, dict):
+                        metadata["turn_indices"] = phase_info.get("turn_indices")
+                    self._ingest_semantic_core_from_summary(
+                        summary_text,
+                        source="phase_summary",
+                        metadata=metadata,
+                    )
+                if closed_state:
+                    self._persist_semantic_core_state(
+                        reason="phase_closed",
+                        metadata={
+                            "phase_id": closed_state.id,
+                            "phase_kind": closed_state.kind,
+                            "status": closing_event.status,
+                        },
+                        force=True,
+                    )
             self.logger.append_phase(
                 self._phase_payload(closing_event, closed_state, summary=phase_summary)
             )
@@ -1962,6 +2200,14 @@ class Meeting:
             live_paths.append(str(self.logger.jsonl))
         if live_paths:
             safe_console_print(f"\n（ライブログ: {' / '.join(live_paths)}）")
+        self._persist_semantic_core_state(
+            reason="meeting_finished",
+            metadata={
+                "turns": len(self.history),
+                "phases": len(self._phases),
+            },
+            force=True,
+        )
         result_path = self.logger.dir / "meeting_result.json"
         safe_console_print(f"\n（保存: {result_path}）")
         base_dir = self.logger.dir
@@ -1989,6 +2235,8 @@ class Meeting:
                 "metrics_csv": base_dir / "metrics.csv",
                 "metrics_cpu_mem_png": base_dir / "metrics_cpu_mem.png",
                 "metrics_gpu_png": base_dir / "metrics_gpu.png",
+                "semantic_core_json": self.logger.semantic_core_json,
+                "semantic_core_jsonl": self.logger.semantic_core_jsonl,
             }
         )
         if self.cfg.summary_probe_log_enabled:
@@ -2011,7 +2259,7 @@ class Meeting:
                     "agents": [a.model_dump() for a in self.cfg.agents],
                     "turns": [t.__dict__ for t in self.history],
                     "phases": self._serialize_phases(),
-                    "semantic_core": self._semantic_core,
+                    "semantic_core": self._semantic_core_store.to_dict(),
                     "final": final,
                     "kpi": kpi_result or {},
                     "files": files,
@@ -2226,11 +2474,29 @@ class Meeting:
             phase_summary = self._build_phase_summary_record(closing_event, closed_state)
             if phase_summary:
                 self._log_phase_summary(phase_summary)
-                try:
-                    snapshot = json.loads(json.dumps(phase_summary, ensure_ascii=False))
-                except Exception:
-                    snapshot = phase_summary.copy()
-                self._semantic_core.append(snapshot)
+                summary_text = phase_summary.get("summary", "")
+                metadata = {
+                    "phase_id": closed_state.id,
+                    "phase_kind": closed_state.kind,
+                    "turn_count": phase_summary.get("turn_count"),
+                }
+                phase_info = phase_summary.get("phase", {})
+                if isinstance(phase_info, dict):
+                    metadata["turn_indices"] = phase_info.get("turn_indices")
+                self._ingest_semantic_core_from_summary(
+                    summary_text,
+                    source="phase_summary",
+                    metadata=metadata,
+                )
+            self._persist_semantic_core_state(
+                reason="phase_closed",
+                metadata={
+                    "phase_id": closed_state.id,
+                    "phase_kind": closed_state.kind,
+                    "status": closing_event.status,
+                },
+                force=True,
+            )
         self.logger.append_phase(
             self._phase_payload(closing_event, closed_state, summary=phase_summary)
         )

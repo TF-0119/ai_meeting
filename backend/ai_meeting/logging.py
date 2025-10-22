@@ -39,6 +39,8 @@ class LiveLogWriter:
         self.thoughts_log = base_dir / "thoughts.jsonl"
         self.summary_probe_log = base_dir / summary_probe_filename
         self.phase_summary_log = base_dir / summary_probe_phase_filename
+        self.semantic_core_json = base_dir / "semantic_core.json"
+        self.semantic_core_jsonl = base_dir / "semantic_core.jsonl"
 
         # ヘッダを書いておく
         if self.md:
@@ -60,6 +62,7 @@ class LiveLogWriter:
         self.thoughts_log.touch()
         self.summary_probe_log.touch()
         self.phase_summary_log.touch()
+        self.semantic_core_jsonl.touch()
 
     def append_turn(
         self,
@@ -169,6 +172,33 @@ class LiveLogWriter:
 
         with self.phase_summary_log.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            f.flush()
+
+    def write_semantic_core(self, state: Dict[str, Any]) -> None:
+        """セマンティックコアの最新状態を JSON で保存する。"""
+
+        with self.semantic_core_json.open("w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+
+    def append_semantic_core_snapshot(
+        self,
+        state: Dict[str, Any],
+        *,
+        reason: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """セマンティックコアの状態スナップショットを JSONL 追記する。"""
+
+        record: Dict[str, Any] = {
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "state": state,
+        }
+        if reason:
+            record["reason"] = reason
+        if metadata:
+            record["meta"] = dict(metadata)
+        with self.semantic_core_jsonl.open("a", encoding="utf-8", newline="") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
             f.flush()
 
     def iter_summary_probe(self) -> Iterator[Dict[str, Any]]:
