@@ -322,83 +322,39 @@ export default function Meeting() {
           </span>
         </div>
         <div className="timeline" ref={listRef} aria-live="polite">
-          {timelineItems.length === 0 && (
-            <div className="muted">（ログを待機中… ファイル未生成の可能性）</div>
-          )}
-          {timelineItems.map((item) => {
-            const isExpanded = expandedId === item.id;
-            const detailId = `timeline-detail-${item.id}`;
+          {msgs.length === 0 && <div className="muted">（ログを待機中… ファイル未生成の可能性）</div>}
+          {msgs.map((m, index) => {
+            const speaker = (m.speaker ?? "unknown").toString().trim() || "unknown";
+            const message = (m.text ?? "").toString();
+            const initial = speaker.charAt(0).toUpperCase() || "?";
+            const bandIndex = (index % 6) + 1;
             return (
-              <button
-                key={item.id}
-                type="button"
-                className={`timeline-entry${isExpanded ? " is-expanded" : ""}`}
-                onClick={handleEntryClick(item.id)}
-                onKeyDown={(event) => handleEntryKeyDown(event, item.id)}
-                aria-expanded={isExpanded ? "true" : "false"}
-                aria-controls={detailId}
-                style={item.accentStyle}
+              <article
+                key={m.id}
+                className={`timeline-card timeline-card--accent-${bandIndex}`}
+                data-expanded="true"
+                aria-label={`${speaker} の発言`}
               >
-                <span className="timeline-entry-accent" aria-hidden="true">
-                  <span className="timeline-entry-initial">{item.initials}</span>
-                </span>
-                <div className="timeline-entry-main">
-                  <div className="timeline-entry-summary">
-                    <span className="timeline-entry-speaker">{item.speaker}</span>
-                    {item.timestamp && (
-                      <time dateTime={item.timestamp.iso} className="timeline-entry-time">
-                        {item.timestamp.label}
-                      </time>
-                    )}
-                  </div>
-                  <p className="timeline-entry-snippet">
-                    {item.snippet || (item.text ? "…" : "（本文なし）")}
-                  </p>
-                  <div
-                    id={detailId}
-                    className={`timeline-entry-details${isExpanded ? " is-open" : ""}`}
-                    hidden={!isExpanded}
-                  >
-                    <div className="timeline-entry-profile">
-                      <span className="timeline-avatar" aria-hidden="true">
-                        {item.initials}
-                      </span>
-                      <div className="timeline-entry-profile-body">
-                        <span className="timeline-entry-speaker-full">{item.speaker}</span>
-                        {item.phaseKind && (
-                          <span className="timeline-entry-phase">フェーズ: {item.phaseKind}</span>
-                        )}
-                        {typeof item.phase?.turn === "number" && (
-                          <span className="timeline-entry-phase-turn">ターン {item.phase.turn}</span>
-                        )}
-                      </div>
-                      {item.progress && (
-                        <span
-                          className="timeline-entry-progress"
-                          role="img"
-                          aria-label={item.progress.label}
-                          title={item.progress.label}
-                        >
-                          {item.progress.icon}
-                        </span>
+                <div className="timeline-card__band" aria-hidden="true" />
+                <div className="timeline-card__body">
+                  <header className="timeline-card__header">
+                    <span className="timeline-card__initial" aria-hidden="true">
+                      {initial}
+                    </span>
+                    <div className="timeline-card__meta">
+                      <span className="timeline-card__speaker speaker">{speaker}</span>
+                      {m.ts && (
+                        <time className="timeline-card__timestamp" dateTime={m.ts}>
+                          {m.ts}
+                        </time>
                       )}
                     </div>
-                    <div className="timeline-entry-text">
-                      {item.text || <span className="muted">（本文なし）</span>}
-                    </div>
-                    <div className="timeline-entry-tags">
-                      {item.intentLabel && (
-                        <span className={`timeline-intent-tag intent-${item.intent}`}>
-                          {item.intentLabel}
-                        </span>
-                      )}
-                      {item.phaseKind && (
-                        <span className="timeline-phase-tag">{item.phaseKind}</span>
-                      )}
-                    </div>
+                  </header>
+                  <div className="timeline-card__content">
+                    <p className="timeline-card__text text">{message}</p>
                   </div>
                 </div>
-              </button>
+              </article>
             );
           })}
         </div>
