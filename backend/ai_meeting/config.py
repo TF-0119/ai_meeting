@@ -105,6 +105,8 @@ class MeetingConfig(BaseModel):
     summary_probe_enabled: bool = False  # 要約プローブ（暫定）を有効化するかどうか
     summary_probe_log_enabled: bool = False  # 要約プローブ結果をログ保存するかどうか
     summary_probe_filename: str = "summary_probe.json"  # 要約プローブの出力ファイル名
+    summary_probe_phase_log_enabled: bool = False  # フェーズ要約ログを保存するかどうか
+    summary_probe_phase_filename: str = "summary_probe_phase.jsonl"  # フェーズ要約の出力ファイル名
     summary_probe_temperature: float = Field(
         0.4,
         ge=0.0,

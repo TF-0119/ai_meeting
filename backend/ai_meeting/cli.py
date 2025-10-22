@@ -96,6 +96,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         default="summary_probe.json",
         help="要約プローブの出力ファイル名（暫定）",
     )
+    ap.add_argument(
+        "--summary-probe-phase-log",
+        dest="summary_probe_phase_log_enabled",
+        action="store_true",
+        help="フェーズ単位の要約結果をJSONLとして保存する",
+    )
+    ap.add_argument(
+        "--summary-probe-phase-filename",
+        default="summary_probe_phase.jsonl",
+        help="フェーズ要約ログの出力ファイル名",
+    )
     # 以降のステップ用（Step 0では未使用。フラグだけ受ける）
     ap.add_argument(
         "--equilibrium",
@@ -289,6 +300,12 @@ def build_meeting_config(args: argparse.Namespace) -> MeetingConfig:
         summary_probe_enabled=getattr(args, "summary_probe_enabled", False),
         summary_probe_log_enabled=getattr(args, "summary_probe_log_enabled", False),
         summary_probe_filename=getattr(args, "summary_probe_filename", "summary_probe.json"),
+        summary_probe_phase_log_enabled=getattr(
+            args, "summary_probe_phase_log_enabled", False
+        ),
+        summary_probe_phase_filename=getattr(
+            args, "summary_probe_phase_filename", "summary_probe_phase.jsonl"
+        ),
     )
     cfg.kpi_window = max(1, int(getattr(args, "kpi_window", 6)))
     cfg.kpi_auto_prompt = getattr(args, "kpi_auto_prompt", True)

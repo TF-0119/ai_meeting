@@ -29,6 +29,7 @@ def _create_config(outdir: Path) -> MeetingConfig:
         think_debug=False,
         summary_probe_enabled=True,
         summary_probe_log_enabled=True,
+        summary_probe_phase_log_enabled=True,
         outdir=str(outdir),
     )
 
@@ -47,6 +48,15 @@ def test_summary_probe_logging_appends_json(tmp_path, monkeypatch) -> None:
         summary_entries = list(meeting.logger.iter_summary_probe())
         assert summary_entries, "summary_probe ログに JSON エントリが存在すること"
 
+        phase_summary_path = log_dir / cfg.summary_probe_phase_filename
+        phase_records = [
+            json.loads(line)
+            for line in phase_summary_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        assert phase_records, "フェーズ要約ログにエントリが存在すること"
+        assert all("phase" in rec and "summary" in rec for rec in phase_records)
+
         live_records = [
             json.loads(line)
             for line in (log_dir / "meeting_live.jsonl").read_text(encoding="utf-8").splitlines()
@@ -59,5 +69,11 @@ def test_summary_probe_logging_appends_json(tmp_path, monkeypatch) -> None:
         assert all(rec.get("type") != "summary_probe" for rec in live_records)
         assert len(summary_entries) == len(summary_records)
         assert [rec["summary"] for rec in summary_records] == [entry["summary"] for entry in summary_entries]
+
+        result_data = json.loads((log_dir / "meeting_result.json").read_text(encoding="utf-8"))
+        semantic_core = result_data.get("semantic_core", [])
+        assert semantic_core, "meeting_result.json に semantic_core が含まれていること"
+        files_meta = result_data.get("files", {})
+        assert files_meta.get("summary_probe_phase_json") == cfg.summary_probe_phase_filename
     finally:
         shutil.rmtree(meeting.logger.dir, ignore_errors=True)
