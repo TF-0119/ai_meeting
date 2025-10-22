@@ -124,6 +124,34 @@ class SemanticCoreStore:
         self._enforce_limit(category)
         return True
 
+    def get_ranked_items(
+        self,
+        category: str,
+        *,
+        limit: Optional[int] = None,
+        window: Optional[int] = None,
+        weight_min: Optional[float] = None,
+    ) -> List[SemanticCoreItem]:
+        """プロンプト注入向けに整列済みのエントリ一覧を返す。"""
+
+        bucket = self._items.get(category, [])
+        if not bucket:
+            return []
+
+        ranked = sorted(bucket, key=lambda item: item.updated_at, reverse=True)
+        if isinstance(window, int) and window > 0:
+            ranked = ranked[:window]
+
+        if weight_min is not None:
+            ranked = [item for item in ranked if item.weight >= weight_min]
+
+        ranked.sort(key=lambda item: (-item.weight, -item.mentions, -item.updated_at))
+
+        if isinstance(limit, int) and limit > 0:
+            ranked = ranked[:limit]
+
+        return list(ranked)
+
     def _enforce_limit(self, category: str) -> None:
         """カテゴリごとの上限を満たすよう調整する。"""
 

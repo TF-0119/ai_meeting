@@ -129,6 +129,29 @@ class MeetingConfig(BaseModel):
         ge=0,
         description="プロンプトに注入する直近覚書の件数",
     )
+    semantic_core_prompt_enabled: bool = Field(
+        True,
+        description="セマンティックコアから共有メモをプロンプトへ注入するかどうか。",
+    )
+    semantic_core_prompt_categories: List[str] = Field(
+        default_factory=lambda: ["key_points", "open_issues"],
+        description="共有メモとして提示するカテゴリの優先順。",
+    )
+    semantic_core_prompt_per_category: int = Field(
+        2,
+        ge=0,
+        description="カテゴリごとに注入する共有メモ件数（0で無効化）。",
+    )
+    semantic_core_prompt_window: int = Field(
+        6,
+        ge=0,
+        description="共有メモ候補として考慮する最新更新件数（0で全件対象）。",
+    )
+    semantic_core_prompt_weight_min: float = Field(
+        0.0,
+        ge=0.0,
+        description="共有メモとして注入する際の最小重要度（weight）。",
+    )
     personality_seed: Optional[int] = Field(
         default=None,
         description="個性テンプレートの抽選に用いる乱数シード。指定がない場合は環境値やシステム既定を利用する。",
