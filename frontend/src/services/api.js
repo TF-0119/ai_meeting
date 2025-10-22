@@ -311,12 +311,21 @@ export function parseLiveRows(rows) {
 
     const metadata = enrichLiveRow(r);
 
+    const phase = typeof r.phase === "object" && r.phase !== null ? r.phase : null;
+    const flow = typeof r.flow === "object" || typeof r.flow === "string" || typeof r.flow === "number"
+      ? r.flow
+      : null;
     timeline.push({
       id: r.id ?? r.index ?? r.turn ?? i + 1,
       speaker: r.speaker ?? r.role ?? r.agent ?? "unknown",
       text: r.text ?? r.message ?? r.content ?? "",
       ts: r.ts ?? r.time ?? r.timestamp ?? null,
       ...metadata,
+      intent: r.intent ?? r.intent_tag ?? r.intentTag ?? null,
+      phase,
+      flow,
+      round: r.round ?? null,
+      turn: r.turn ?? null,
     });
   });
 
