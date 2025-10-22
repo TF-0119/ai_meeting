@@ -754,7 +754,16 @@
 }
 
 .timeline-card {
-  --timeline-band-color: var(--timeline-band-1);
+  --timeline-band-width: 8px;
+  --timeline-card-radius: var(--radius-lg);
+  --timeline-card-bg: color-mix(in srgb, var(--color-surface-layer) 94%, transparent 6%);
+  --timeline-card-bg-hover: color-mix(in srgb, var(--color-surface-layer) 88%, transparent 12%);
+  --timeline-card-border: color-mix(in srgb, var(--color-border) 75%, transparent);
+  --timeline-card-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+  --timeline-card-shadow-hover: 0 12px 32px rgba(15, 23, 42, 0.14);
+  --timeline-collapse-duration: var(--transition-base);
+  --timeline-card-content-max: 480px;
+  --timeline-band-color: #406cff;
   position: relative;
   display: grid;
   grid-template-columns: var(--timeline-band-width) 1fr;
@@ -803,14 +812,9 @@
   justify-content: center;
   font-weight: 700;
   font-size: 18px;
-  background: color-mix(in srgb, var(--timeline-band-color) 30%, transparent);
+  background: color-mix(in srgb, var(--timeline-band-color) 32%, transparent);
   color: var(--color-text-strong);
   border: 1px solid color-mix(in srgb, var(--timeline-band-color) 55%, transparent);
-}
-
-[data-theme="dark"] .timeline-card__initial,
-:root[data-theme="dark"] .timeline-card__initial {
-  color: var(--color-text);
 }
 
 .timeline-card__meta {
@@ -820,7 +824,8 @@
   min-width: 0;
 }
 
-.timeline-card__speaker {
+.timeline-card__speaker,
+.timeline-card__meta .speaker {
   font-weight: 600;
   color: var(--color-text-strong);
 }
@@ -832,13 +837,14 @@
 
 .timeline-card__content {
   overflow: hidden;
-  max-height: var(--timeline-card-content-max, 400px);
+  max-height: var(--timeline-card-content-max);
   opacity: 1;
-  transition: max-height var(--timeline-collapse-duration, 240ms ease),
-    opacity var(--timeline-collapse-duration, 240ms ease);
+  transition: max-height var(--timeline-collapse-duration),
+    opacity var(--timeline-collapse-duration);
 }
 
-.timeline-card__text {
+.timeline-card__text,
+.timeline-card__content .text {
   margin: 0;
   color: var(--color-text);
   line-height: 1.6;
@@ -856,100 +862,61 @@
 }
 
 .timeline-card--accent-1 {
-  --timeline-band-color: var(--timeline-band-1);
+  --timeline-band-color: #406cff;
 }
 
 .timeline-card--accent-2 {
-  --timeline-band-color: var(--timeline-band-2);
+  --timeline-band-color: #d64550;
 }
 
 .timeline-card--accent-3 {
-  --timeline-band-color: var(--timeline-band-3);
+  --timeline-band-color: #1f9d55;
 }
 
 .timeline-card--accent-4 {
-  --timeline-band-color: var(--timeline-band-4);
+  --timeline-band-color: #d38a11;
 }
 
 .timeline-card--accent-5 {
-  --timeline-band-color: var(--timeline-band-5);
+  --timeline-band-color: #7c3aed;
 }
 
 .timeline-card--accent-6 {
-  --timeline-band-color: var(--timeline-band-6);
+  --timeline-band-color: #0ea5e9;
 }
 
-.intent-tag {
-  --intent-tag-bg: var(--intent-generate-bg);
-  --intent-tag-color: var(--intent-generate-color);
-  --intent-tag-border: var(--intent-generate-border);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  background: var(--intent-tag-bg);
-  color: var(--intent-tag-color);
-  border: 1px solid var(--intent-tag-border);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+[data-theme="dark"] .timeline-card,
+:root[data-theme="dark"] .timeline-card {
+  --timeline-card-bg: color-mix(in srgb, var(--color-surface-layer) 82%, transparent);
+  --timeline-card-bg-hover: color-mix(in srgb, var(--color-surface-layer) 70%, transparent 30%);
+  --timeline-card-border: color-mix(in srgb, var(--color-border) 65%, transparent);
+  --timeline-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --timeline-card-shadow-hover: 0 16px 36px rgba(0, 0, 0, 0.45);
+  --timeline-card-content-max: 520px;
 }
 
-.intent-tag--generate {
-  --intent-tag-bg: var(--intent-generate-bg);
-  --intent-tag-color: var(--intent-generate-color);
-  --intent-tag-border: var(--intent-generate-border);
+[data-theme="dark"] .timeline-card__initial,
+:root[data-theme="dark"] .timeline-card__initial {
+  color: var(--color-text);
+  background: color-mix(in srgb, var(--timeline-band-color) 24%, transparent);
+  border-color: color-mix(in srgb, var(--timeline-band-color) 45%, transparent);
 }
 
-.intent-tag--critique {
-  --intent-tag-bg: var(--intent-critique-bg);
-  --intent-tag-color: var(--intent-critique-color);
-  --intent-tag-border: var(--intent-critique-border);
-}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .timeline-card {
+    --timeline-card-bg: color-mix(in srgb, var(--color-surface-layer) 82%, transparent);
+    --timeline-card-bg-hover: color-mix(in srgb, var(--color-surface-layer) 70%, transparent 30%);
+    --timeline-card-border: color-mix(in srgb, var(--color-border) 65%, transparent);
+    --timeline-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    --timeline-card-shadow-hover: 0 16px 36px rgba(0, 0, 0, 0.45);
+    --timeline-card-content-max: 520px;
+  }
 
-.intent-tag--meta {
-  --intent-tag-bg: var(--intent-meta-bg);
-  --intent-tag-color: var(--intent-meta-color);
-  --intent-tag-border: var(--intent-meta-border);
-}
-
-.progress-icon {
-  --progress-icon-bg: var(--progress-icon-planned-bg);
-  --progress-icon-color: var(--progress-icon-planned-color);
-  --progress-icon-border: var(--progress-icon-planned-border);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  background: var(--progress-icon-bg);
-  color: var(--progress-icon-color);
-  border: 1px solid var(--progress-icon-border);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.progress-icon--planned {
-  --progress-icon-bg: var(--progress-icon-planned-bg);
-  --progress-icon-color: var(--progress-icon-planned-color);
-  --progress-icon-border: var(--progress-icon-planned-border);
-}
-
-.progress-icon--active {
-  --progress-icon-bg: var(--progress-icon-active-bg);
-  --progress-icon-color: var(--progress-icon-active-color);
-  --progress-icon-border: var(--progress-icon-active-border);
-  border-radius: 999px;
-}
-
-.progress-icon--done {
-  --progress-icon-bg: var(--progress-icon-done-bg);
-  --progress-icon-color: var(--progress-icon-done-color);
-  --progress-icon-border: var(--progress-icon-done-border);
-  border-radius: 4px;
+  :root:not([data-theme]) .timeline-card__initial {
+    color: var(--color-text);
+    background: color-mix(in srgb, var(--timeline-band-color) 24%, transparent);
+    border-color: color-mix(in srgb, var(--timeline-band-color) 45%, transparent);
+  }
 }
 
 @media (max-width: 720px) {

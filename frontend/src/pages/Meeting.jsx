@@ -154,13 +154,16 @@ export default function Meeting() {
         <div className="timeline" ref={listRef} aria-live="polite">
           {msgs.length === 0 && <div className="muted">（ログを待機中… ファイル未生成の可能性）</div>}
           {msgs.map((m, index) => {
-            const initial = (m.speaker ?? "?").trim().charAt(0).toUpperCase() || "?";
+            const speaker = (m.speaker ?? "unknown").toString().trim() || "unknown";
+            const message = (m.text ?? "").toString();
+            const initial = speaker.charAt(0).toUpperCase() || "?";
             const bandIndex = (index % 6) + 1;
             return (
               <article
                 key={m.id}
                 className={`timeline-card timeline-card--accent-${bandIndex}`}
                 data-expanded="true"
+                aria-label={`${speaker} の発言`}
               >
                 <div className="timeline-card__band" aria-hidden="true" />
                 <div className="timeline-card__body">
@@ -169,7 +172,7 @@ export default function Meeting() {
                       {initial}
                     </span>
                     <div className="timeline-card__meta">
-                      <span className="timeline-card__speaker">{m.speaker}</span>
+                      <span className="timeline-card__speaker speaker">{speaker}</span>
                       {m.ts && (
                         <time className="timeline-card__timestamp" dateTime={m.ts}>
                           {m.ts}
@@ -178,7 +181,7 @@ export default function Meeting() {
                     </div>
                   </header>
                   <div className="timeline-card__content">
-                    <p className="timeline-card__text">{m.text}</p>
+                    <p className="timeline-card__text text">{message}</p>
                   </div>
                 </div>
               </article>
