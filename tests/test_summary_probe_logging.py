@@ -71,8 +71,10 @@ def test_summary_probe_logging_appends_json(tmp_path, monkeypatch) -> None:
         assert [rec["summary"] for rec in summary_records] == [entry["summary"] for entry in summary_entries]
 
         result_data = json.loads((log_dir / "meeting_result.json").read_text(encoding="utf-8"))
-        semantic_core = result_data.get("semantic_core", [])
-        assert semantic_core, "meeting_result.json に semantic_core が含まれていること"
+        semantic_core = result_data.get("semantic_core", {})
+        assert isinstance(semantic_core, dict)
+        populated = any(bool(entries) for entries in semantic_core.values())
+        assert populated, "meeting_result.json に semantic_core が記録されていること"
         files_meta = result_data.get("files", {})
         assert files_meta.get("summary_probe_phase_json") == cfg.summary_probe_phase_filename
     finally:
