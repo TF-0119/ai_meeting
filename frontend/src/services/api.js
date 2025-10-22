@@ -309,32 +309,38 @@ export function parseLiveRows(rows) {
       return;
     }
 
-    const phase = normalizePhase(r.phase ?? r.stage ?? null);
-    const intent = normalizeLabeledEntity(r.intent ?? r.intent_info ?? r.intentSummary ?? null);
-    const flow = normalizeLabeledEntity(r.flow ?? r.flow_info ?? r.playbook ?? null);
-    const persona = normalizePersona(r.persona ?? r.profile ?? r.character ?? null);
-    const icon = pickIcon(r, persona);
-    const progressHint = deriveProgressHint(phase);
-    const phaseKind = phase?.kind ?? null;
-    const phaseId = phase?.id ?? null;
+    const metadata = enrichLiveRow(r);
 
     timeline.push({
       id: r.id ?? r.index ?? r.turn ?? i + 1,
       speaker: r.speaker ?? r.role ?? r.agent ?? "unknown",
       text: r.text ?? r.message ?? r.content ?? "",
       ts: r.ts ?? r.time ?? r.timestamp ?? null,
-      phase,
-      phaseId,
-      phaseKind,
-      progressHint,
-      intent,
-      flow,
-      persona,
-      icon,
+      ...metadata,
     });
   });
 
   return { timeline, latestSummary, latestFinal };
+}
+
+function enrichLiveRow(row) {
+  const phase = normalizePhase(row.phase ?? row.stage ?? null);
+  const intent = normalizeLabeledEntity(row.intent ?? row.intent_info ?? row.intentSummary ?? null);
+  const flow = normalizeLabeledEntity(row.flow ?? row.flow_info ?? row.playbook ?? null);
+  const persona = normalizePersona(row.persona ?? row.profile ?? row.character ?? null);
+  const icon = pickIcon(row, persona);
+  const progressHint = deriveProgressHint(phase);
+
+  return {
+    phase,
+    phaseId: phase?.id ?? null,
+    phaseKind: phase?.kind ?? null,
+    progressHint,
+    intent,
+    flow,
+    persona,
+    icon,
+  };
 }
 
 // meeting_live.jsonl → タイムライン配列に整形
