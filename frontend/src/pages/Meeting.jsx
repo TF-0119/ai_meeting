@@ -4,6 +4,114 @@ import { getLiveSnapshot, stopMeeting } from "@/services/api";
 import Card from "../components/Card";
 import Button from "../components/Button";
 
+// タイムライン用のカラーパレット（CSSカスタムプロパティで共有）
+const TIMELINE_COLOR_PALETTE = [
+  { bg: "var(--color-accent-soft)", fg: "var(--color-accent)" },
+  { bg: "var(--color-success-soft)", fg: "var(--color-success)" },
+  { bg: "var(--color-warning-soft)", fg: "var(--color-warning)" },
+  { bg: "var(--color-danger-soft)", fg: "var(--color-danger)" },
+  { bg: "color-mix(in srgb, var(--color-accent) 24%, transparent)", fg: "var(--color-accent-strong)" },
+  { bg: "color-mix(in srgb, var(--color-success) 24%, transparent)", fg: "var(--color-success)" },
+];
+
+const INTENT_LABELS = {
+  generate: "生成",
+  critique: "批評",
+  meta: "メタ",
+};
+
+const PROGRESS_ICON_MAP = {
+  forward: { icon: "↗", label: "進行度: 議論が前進しています" },
+  steady: { icon: "→", label: "進行度: 議論は横ばいです" },
+  reflect: { icon: "↘", label: "進行度: 振り返り局面です" },
+};
+
+// 話者名からイニシャルを生成する
+function createInitials(name) {
+  if (!name || typeof name !== "string") return "?";
+  const trimmed = name.trim();
+  if (!trimmed) return "?";
+  const tokens = trimmed.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return trimmed.charAt(0).toUpperCase();
+  const letters = tokens.length === 1
+    ? [tokens[0].charAt(0)]
+    : [tokens[0].charAt(0), tokens[tokens.length - 1].charAt(0)];
+  const joined = letters.join("").trim();
+  if (!joined) return trimmed.charAt(0).toUpperCase();
+  return joined.toUpperCase().slice(0, 2);
+}
+
+// flow や phase.kind から進行度アイコン種別を決める
+function resolveFlowTrend(flow) {
+  if (flow == null) return null;
+  if (typeof flow === "number" && Number.isFinite(flow)) {
+    if (flow >= 0.66) return "forward";
+    if (flow <= 0.33) return "reflect";
+    return "steady";
+  }
+  if (typeof flow === "string") {
+    const normalized = flow.toLowerCase();
+    if (/(up|forward|rise|fast|positive|accelerat)/.test(normalized)) return "forward";
+    if (/(down|back|slow|negative|regress|declin)/.test(normalized)) return "reflect";
+    if (/(steady|flat|hold|neutral|calm)/.test(normalized)) return "steady";
+    return null;
+  }
+  if (typeof flow === "object") {
+    if (typeof flow.trend === "string") return resolveFlowTrend(flow.trend);
+    if (typeof flow.direction === "string") return resolveFlowTrend(flow.direction);
+    if (typeof flow.delta === "number") return resolveFlowTrend(flow.delta);
+    if (typeof flow.score === "number") return resolveFlowTrend(flow.score);
+  }
+  return null;
+}
+
+function deriveProgressKind(phaseKind, flow) {
+  const flowResult = resolveFlowTrend(flow);
+  if (flowResult) return flowResult;
+  const kind = typeof phaseKind === "string" ? phaseKind.toLowerCase() : "";
+  switch (kind) {
+    case "resolution":
+    case "decision":
+    case "action":
+    case "synthesis":
+      return "forward";
+    case "wrapup":
+    case "review":
+    case "retrospective":
+    case "reflection":
+      return "reflect";
+    default:
+      return "steady";
+  }
+}
+
+// 折りたたみ用の概要テキストを取り出す
+function extractSnippet(text) {
+  if (!text || typeof text !== "string") return "";
+  const firstLine = text.split(/\r?\n/).find((line) => line.trim().length > 0);
+  return firstLine ? firstLine.trim() : "";
+}
+
+// タイムスタンプを画面表示用に整形する
+function formatTimestamp(ts) {
+  if (!ts) return null;
+  const date = new Date(ts);
+  if (Number.isNaN(date.getTime())) return null;
+  const label = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const iso = typeof ts === "string" ? ts : date.toISOString();
+  return { label, iso };
+}
+
+// intent ラベルを正規化
+function normalizeIntent(intent) {
+  if (!intent) return null;
+  const value = String(intent).toLowerCase();
+  if (value.includes("generate")) return "generate";
+  if (value.includes("critique") || value.includes("critic")) return "critique";
+  if (value.includes("meta")) return "meta";
+  return null;
+}
+
 export default function Meeting() {
   const { id: meetingId } = useParams();      // ← URLの :id が “logs のフォルダ名” と一致している必要あり
   const nav = useNavigate();
@@ -16,6 +124,7 @@ export default function Meeting() {
   const [progress, setProgress] = useState(null);
   const [autoCompleted, setAutoCompleted] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
   const listRef = useRef(null);
 
   // ポーリング：5秒ごとに meeting_live.jsonl を読む
@@ -58,6 +167,7 @@ export default function Meeting() {
     setResultReady(false);
     setAutoCompleted(false);
     setLastChangeAt(Date.now());
+    setExpandedId(null);
   }, [meetingId]);
 
   // “完了らしさ”の補助判定：30秒間メッセージ数が増えなければ done 扱い
@@ -74,6 +184,66 @@ export default function Meeting() {
   useEffect(() => {
     if (!listRef.current) return;
     listRef.current.scrollTop = listRef.current.scrollHeight;
+  }, [msgs]);
+
+  useEffect(() => {
+    if (expandedId === null) return;
+    if (!msgs.some((m) => m.id === expandedId)) {
+      setExpandedId(null);
+    }
+  }, [msgs, expandedId]);
+
+  const toggleExpanded = (id) => {
+    setExpandedId((prev) => (prev === id ? null : id));
+  };
+
+  const handleEntryClick = (id) => (event) => {
+    if (event.detail === 0) return;
+    toggleExpanded(id);
+  };
+
+  const handleEntryKeyDown = (event, id) => {
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      toggleExpanded(id);
+    }
+  };
+
+  const timelineItems = useMemo(() => {
+    if (!Array.isArray(msgs) || msgs.length === 0) return [];
+    const colorMap = new Map();
+    let paletteIndex = 0;
+    return msgs.map((m) => {
+      const speakerName = typeof m.speaker === "string" && m.speaker.trim().length > 0
+        ? m.speaker.trim()
+        : "unknown";
+      if (!colorMap.has(speakerName)) {
+        colorMap.set(speakerName, paletteIndex);
+        paletteIndex += 1;
+      }
+      const palette = TIMELINE_COLOR_PALETTE[colorMap.get(speakerName) % TIMELINE_COLOR_PALETTE.length];
+      const phaseKind = typeof m.phase?.kind === "string" ? m.phase.kind : null;
+      const progressKind = deriveProgressKind(phaseKind, m.flow);
+      const normalizedIntent = normalizeIntent(m.intent);
+      const timestamp = formatTimestamp(m.ts);
+      return {
+        id: m.id,
+        speaker: speakerName,
+        text: typeof m.text === "string" ? m.text : "",
+        initials: createInitials(speakerName),
+        snippet: extractSnippet(m.text),
+        accentStyle: {
+          "--timeline-accent-bg": palette.bg,
+          "--timeline-accent-fg": palette.fg,
+        },
+        intent: normalizedIntent,
+        intentLabel: normalizedIntent ? INTENT_LABELS[normalizedIntent] : null,
+        phase: m.phase ?? null,
+        phaseKind,
+        timestamp,
+        progress: PROGRESS_ICON_MAP[progressKind] ?? null,
+      };
+    });
   }, [msgs]);
 
   const memoSummary = useMemo(() => {
