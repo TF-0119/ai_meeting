@@ -764,6 +764,8 @@
   --timeline-collapse-duration: var(--transition-base);
   --timeline-card-content-max: 480px;
   --timeline-band-color: #406cff;
+  --timeline-accent-bg: color-mix(in srgb, var(--timeline-band-color) 32%, transparent);
+  --timeline-accent-fg: var(--color-text-strong);
   position: relative;
   display: grid;
   grid-template-columns: var(--timeline-band-width) 1fr;
@@ -774,6 +776,11 @@
   overflow: hidden;
   transition: transform var(--transition-base), box-shadow var(--transition-base),
     border-color var(--transition-base), background var(--transition-base);
+}
+
+.timeline-card:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .timeline-card:hover,
@@ -812,9 +819,19 @@
   justify-content: center;
   font-weight: 700;
   font-size: 18px;
-  background: color-mix(in srgb, var(--timeline-band-color) 32%, transparent);
-  color: var(--color-text-strong);
+  background: var(--timeline-accent-bg);
+  color: var(--timeline-accent-fg);
   border: 1px solid color-mix(in srgb, var(--timeline-band-color) 55%, transparent);
+}
+
+.timeline-card__avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid color-mix(in srgb, var(--timeline-band-color) 55%, transparent);
+  background: var(--timeline-accent-bg);
+  flex-shrink: 0;
 }
 
 .timeline-card__meta {
@@ -835,6 +852,59 @@
   color: var(--color-text-muted);
 }
 
+.timeline-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -2px;
+}
+
+.timeline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  background: color-mix(in srgb, var(--timeline-accent-bg) 80%, var(--color-surface-layer) 20%);
+  color: var(--timeline-accent-fg);
+  border: 1px solid color-mix(in srgb, var(--timeline-band-color) 40%, transparent);
+}
+
+.timeline-chip--intent-generate {
+  background: var(--intent-generate-bg);
+  color: var(--intent-generate-color);
+  border-color: var(--intent-generate-border);
+}
+
+.timeline-chip--intent-critique {
+  background: var(--intent-critique-bg);
+  color: var(--intent-critique-color);
+  border-color: var(--intent-critique-border);
+}
+
+.timeline-chip--intent-meta {
+  background: var(--intent-meta-bg);
+  color: var(--intent-meta-color);
+  border-color: var(--intent-meta-border);
+}
+
+.timeline-chip--progress {
+  font-size: 16px;
+  padding-inline: 6px;
+}
+
+.timeline-card__summary {
+  color: var(--color-text-muted);
+}
+
+.timeline-card__summary-text {
+  margin: 0;
+  line-height: 1.5;
+}
+
 .timeline-card__content {
   overflow: hidden;
   max-height: var(--timeline-card-content-max);
@@ -849,6 +919,40 @@
   color: var(--color-text);
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.timeline-card__details {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.timeline-card__detail {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.timeline-card__detail dt {
+  margin: 0;
+  min-width: 72px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.timeline-card__detail dd {
+  margin: 0;
+  flex: 1;
+  color: var(--color-text);
+}
+
+.timeline-card__detail-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
 }
 
 .timeline-card[data-expanded="false"] .timeline-card__content {
@@ -893,6 +997,8 @@
   --timeline-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   --timeline-card-shadow-hover: 0 16px 36px rgba(0, 0, 0, 0.45);
   --timeline-card-content-max: 520px;
+  --timeline-accent-bg: color-mix(in srgb, var(--timeline-band-color) 24%, transparent);
+  --timeline-accent-fg: var(--color-text);
 }
 
 [data-theme="dark"] .timeline-card__initial,
@@ -910,6 +1016,8 @@
     --timeline-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
     --timeline-card-shadow-hover: 0 16px 36px rgba(0, 0, 0, 0.45);
     --timeline-card-content-max: 520px;
+    --timeline-accent-bg: color-mix(in srgb, var(--timeline-band-color) 24%, transparent);
+    --timeline-accent-fg: var(--color-text);
   }
 
   :root:not([data-theme]) .timeline-card__initial {

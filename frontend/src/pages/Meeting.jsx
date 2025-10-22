@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { getLiveSnapshot, stopMeeting } from "@/services/api";
+import { createInitials } from "@/utils/text";
+import { deriveFlowTrendKind, FLOW_TREND_SYMBOLS } from "@/utils/flow";
 import Card from "../components/Card";
 import Button from "../components/Button";
 
@@ -21,69 +23,10 @@ const INTENT_LABELS = {
 };
 
 const PROGRESS_ICON_MAP = {
-  forward: { icon: "↗", label: "進行度: 議論が前進しています" },
-  steady: { icon: "→", label: "進行度: 議論は横ばいです" },
-  reflect: { icon: "↘", label: "進行度: 振り返り局面です" },
+  forward: { icon: FLOW_TREND_SYMBOLS.forward, label: "進行度: 議論が前進しています" },
+  steady: { icon: FLOW_TREND_SYMBOLS.steady, label: "進行度: 議論は横ばいです" },
+  reflect: { icon: FLOW_TREND_SYMBOLS.reflect, label: "進行度: 振り返り局面です" },
 };
-
-// 話者名からイニシャルを生成する
-function createInitials(name) {
-  if (!name || typeof name !== "string") return "?";
-  const trimmed = name.trim();
-  if (!trimmed) return "?";
-  const tokens = trimmed.split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return trimmed.charAt(0).toUpperCase();
-  const letters = tokens.length === 1
-    ? [tokens[0].charAt(0)]
-    : [tokens[0].charAt(0), tokens[tokens.length - 1].charAt(0)];
-  const joined = letters.join("").trim();
-  if (!joined) return trimmed.charAt(0).toUpperCase();
-  return joined.toUpperCase().slice(0, 2);
-}
-
-// flow や phase.kind から進行度アイコン種別を決める
-function resolveFlowTrend(flow) {
-  if (flow == null) return null;
-  if (typeof flow === "number" && Number.isFinite(flow)) {
-    if (flow >= 0.66) return "forward";
-    if (flow <= 0.33) return "reflect";
-    return "steady";
-  }
-  if (typeof flow === "string") {
-    const normalized = flow.toLowerCase();
-    if (/(up|forward|rise|fast|positive|accelerat)/.test(normalized)) return "forward";
-    if (/(down|back|slow|negative|regress|declin)/.test(normalized)) return "reflect";
-    if (/(steady|flat|hold|neutral|calm)/.test(normalized)) return "steady";
-    return null;
-  }
-  if (typeof flow === "object") {
-    if (typeof flow.trend === "string") return resolveFlowTrend(flow.trend);
-    if (typeof flow.direction === "string") return resolveFlowTrend(flow.direction);
-    if (typeof flow.delta === "number") return resolveFlowTrend(flow.delta);
-    if (typeof flow.score === "number") return resolveFlowTrend(flow.score);
-  }
-  return null;
-}
-
-function deriveProgressKind(phaseKind, flow) {
-  const flowResult = resolveFlowTrend(flow);
-  if (flowResult) return flowResult;
-  const kind = typeof phaseKind === "string" ? phaseKind.toLowerCase() : "";
-  switch (kind) {
-    case "resolution":
-    case "decision":
-    case "action":
-    case "synthesis":
-      return "forward";
-    case "wrapup":
-    case "review":
-    case "retrospective":
-    case "reflection":
-      return "reflect";
-    default:
-      return "steady";
-  }
-}
 
 // 折りたたみ用の概要テキストを取り出す
 function extractSnippet(text) {
@@ -105,6 +48,11 @@ function formatTimestamp(ts) {
 // intent ラベルを正規化
 function normalizeIntent(intent) {
   if (!intent) return null;
+  if (typeof intent === "object") {
+    const candidate = intent.label ?? intent.name ?? intent.kind ?? intent.id;
+    if (!candidate) return null;
+    return normalizeIntent(candidate);
+  }
   const value = String(intent).toLowerCase();
   if (value.includes("generate")) return "generate";
   if (value.includes("critique") || value.includes("critic")) return "critique";
@@ -214,34 +162,190 @@ export default function Meeting() {
     const colorMap = new Map();
     let paletteIndex = 0;
     return msgs.map((m) => {
-      const speakerName = typeof m.speaker === "string" && m.speaker.trim().length > 0
+      const primaryName = typeof m.speaker_name === "string" && m.speaker_name.trim().length > 0
+        ? m.speaker_name.trim()
+        : null;
+      const fallbackName = typeof m.speaker === "string" && m.speaker.trim().length > 0
         ? m.speaker.trim()
-        : "unknown";
-      if (!colorMap.has(speakerName)) {
-        colorMap.set(speakerName, paletteIndex);
+        : null;
+      const personaLabel = typeof m.persona?.label === "string" && m.persona.label.trim().length > 0
+        ? m.persona.label.trim()
+        : (typeof m.persona?.name === "string" && m.persona.name.trim().length > 0
+          ? m.persona.name.trim()
+          : null);
+      const displayName = primaryName ?? fallbackName ?? personaLabel ?? "unknown";
+
+      if (!colorMap.has(displayName)) {
+        colorMap.set(displayName, paletteIndex);
         paletteIndex += 1;
       }
-      const palette = TIMELINE_COLOR_PALETTE[colorMap.get(speakerName) % TIMELINE_COLOR_PALETTE.length];
-      const phaseKind = typeof m.phase?.kind === "string" ? m.phase.kind : null;
-      const progressKind = deriveProgressKind(phaseKind, m.flow);
-      const normalizedIntent = normalizeIntent(m.intent);
+      const palette = TIMELINE_COLOR_PALETTE[colorMap.get(displayName) % TIMELINE_COLOR_PALETTE.length];
+      const bandIndex = (colorMap.get(displayName) % TIMELINE_COLOR_PALETTE.length) + 1;
+
+      const text = typeof m.text === "string" ? m.text : "";
+      const snippet = extractSnippet(text);
+      const initials = typeof m.speaker_initials === "string" && m.speaker_initials.trim().length > 0
+        ? m.speaker_initials.trim().slice(0, 2)
+        : createInitials(displayName);
       const timestamp = formatTimestamp(m.ts);
+
+      const phaseKind = typeof m.phaseKind === "string"
+        ? m.phaseKind
+        : typeof m.phase?.kind === "string"
+          ? m.phase.kind
+          : null;
+      const flowTrendKind = m.flowTrendKind ?? deriveFlowTrendKind(phaseKind, m.flowTrend ?? m.flow ?? null);
+      const resolvedProgressKind = flowTrendKind ?? "steady";
+      const progress = PROGRESS_ICON_MAP[resolvedProgressKind] ?? null;
+      const flowTrendSymbol = m.flowTrend ?? progress?.icon ?? null;
+
+      const intentBase = typeof m.intent === "object"
+        ? m.intent.label ?? m.intent.name ?? m.intent.kind ?? m.intent.id
+        : m.intent;
+      const normalizedIntent = normalizeIntent(intentBase);
+      const intentChipLabel = normalizedIntent
+        ? (INTENT_LABELS[normalizedIntent] ?? intentBase ?? normalizedIntent)
+        : (intentBase ?? null);
+      const intentDescription = typeof m.intent === "object" && typeof m.intent.description === "string"
+        ? m.intent.description
+        : null;
+
+      const personaRole = typeof m.persona?.role === "string" && m.persona.role.trim().length > 0
+        ? m.persona.role.trim()
+        : null;
+      const personaDescription = typeof m.persona?.description === "string" && m.persona.description.trim().length > 0
+        ? m.persona.description.trim()
+        : null;
+
+      const phaseLabel = typeof m.phase?.label === "string" && m.phase.label.trim().length > 0
+        ? m.phase.label.trim()
+        : (typeof m.phase?.name === "string" && m.phase.name.trim().length > 0
+          ? m.phase.name.trim()
+          : null);
+      const phaseStatus = typeof m.phase?.status === "string" && m.phase.status.trim().length > 0
+        ? m.phase.status.trim()
+        : null;
+
+      const progressHint = m.progressHint ?? null;
+      const progressHintParts = [];
+      if (progressHint && typeof progressHint.ratio === "number" && Number.isFinite(progressHint.ratio)) {
+        const ratioPercent = Math.round(Math.min(1, Math.max(0, progressHint.ratio)) * 100);
+        progressHintParts.push(`推定進捗 ${ratioPercent}%`);
+      }
+      if (progressHint) {
+        const stepParts = [];
+        if (typeof progressHint.current === "number" && Number.isFinite(progressHint.current)) {
+          stepParts.push(`現在 ${progressHint.current}`);
+        }
+        if (typeof progressHint.total === "number" && Number.isFinite(progressHint.total)) {
+          stepParts.push(`全体 ${progressHint.total}`);
+        }
+        if (stepParts.length) {
+          progressHintParts.push(stepParts.join(" / "));
+        }
+      }
+
+      const phaseDetailParts = [];
+      if (typeof m.phase?.turn === "number" && Number.isFinite(m.phase.turn)) {
+        phaseDetailParts.push(`ターン ${m.phase.turn}`);
+      }
+      if (typeof m.phase?.total === "number" && Number.isFinite(m.phase.total)) {
+        phaseDetailParts.push(`合計 ${m.phase.total}`);
+      }
+      if (typeof m.phase?.progress === "number" && Number.isFinite(m.phase.progress)) {
+        const pct = Math.round(Math.min(1, Math.max(0, m.phase.progress)) * 100);
+        phaseDetailParts.push(`進捗率 ${pct}%`);
+      }
+      if (typeof m.phase?.base === "number" && Number.isFinite(m.phase.base)) {
+        phaseDetailParts.push(`開始ターン ${m.phase.base}`);
+      }
+      const phaseDescriptionParts = [...phaseDetailParts];
+      if (progressHintParts.length) phaseDescriptionParts.push(...progressHintParts);
+      const phaseDescription = phaseDescriptionParts.join(" / ") || null;
+
+      const flowLabel = typeof m.flow === "object"
+        ? m.flow.label ?? m.flow.name ?? m.flow.kind ?? null
+        : (typeof m.flow === "string" && m.flow.trim().length > 0 ? m.flow.trim() : null);
+      const flowDescription = typeof m.flow === "object" && typeof m.flow.description === "string"
+        ? m.flow.description
+        : null;
+
+      const roundTurnParts = [];
+      if (typeof m.round === "number" && Number.isFinite(m.round)) {
+        roundTurnParts.push(`ラウンド ${m.round}`);
+      }
+      if (typeof m.turn === "number" && Number.isFinite(m.turn)) {
+        roundTurnParts.push(`ターン ${m.turn}`);
+      }
+
+      const flowValueParts = [];
+      if (flowTrendSymbol) flowValueParts.push(flowTrendSymbol);
+      if (progress?.label) flowValueParts.push(progress.label);
+      if (flowLabel && !flowValueParts.includes(flowLabel)) flowValueParts.push(flowLabel);
+      const flowValue = flowValueParts.join(" ").trim();
+
+      const details = [];
+      if (personaLabel || personaRole || personaDescription) {
+        const personaValueParts = [personaLabel, personaRole].filter(Boolean);
+        details.push({
+          label: "ペルソナ",
+          value: personaValueParts.length ? personaValueParts.join(" / ") : (personaDescription ?? "—"),
+          description: personaDescription && personaValueParts.length ? personaDescription : null,
+        });
+      }
+      if (intentChipLabel || intentDescription) {
+        details.push({
+          label: "意図",
+          value: intentChipLabel ?? "—",
+          description: intentDescription ?? null,
+        });
+      }
+      if (flowValue || flowDescription) {
+        details.push({
+          label: "フロー",
+          value: flowValue || flowDescription || "—",
+          description: flowDescription && flowDescription !== flowValue ? flowDescription : null,
+        });
+      }
+      if (phaseLabel || phaseKind || phaseStatus || phaseDescription) {
+        const phaseValueParts = [];
+        if (phaseLabel) phaseValueParts.push(phaseLabel);
+        if (phaseKind && (!phaseLabel || phaseKind !== phaseLabel)) phaseValueParts.push(`種類: ${phaseKind}`);
+        if (phaseStatus) phaseValueParts.push(`状態: ${phaseStatus}`);
+        const phaseValue = phaseValueParts.join(" / ") || phaseDescription || "—";
+        details.push({
+          label: "フェーズ",
+          value: phaseValue,
+          description: phaseDescription && phaseDescription !== phaseValue ? phaseDescription : null,
+        });
+      }
+      if (roundTurnParts.length) {
+        details.push({
+          label: "インデックス",
+          value: roundTurnParts.join(" / "),
+          description: null,
+        });
+      }
+
       return {
         id: m.id,
-        speaker: speakerName,
-        text: typeof m.text === "string" ? m.text : "",
-        initials: createInitials(speakerName),
-        snippet: extractSnippet(m.text),
-        accentStyle: {
-          "--timeline-accent-bg": palette.bg,
-          "--timeline-accent-fg": palette.fg,
-        },
-        intent: normalizedIntent,
-        intentLabel: normalizedIntent ? INTENT_LABELS[normalizedIntent] : null,
-        phase: m.phase ?? null,
-        phaseKind,
+        displayName,
+        text,
+        snippet,
+        initials,
+        avatar: typeof m.avatar === "string" && m.avatar.trim().length > 0
+          ? m.avatar
+          : (typeof m.icon === "string" && m.icon.trim().length > 0 ? m.icon.trim() : null),
         timestamp,
-        progress: PROGRESS_ICON_MAP[progressKind] ?? null,
+        palette,
+        bandIndex,
+        intentKey: normalizedIntent,
+        intentLabel: intentChipLabel,
+        intentDescription,
+        progressKind: resolvedProgressKind,
+        progress,
+        flowTrendSymbol,
+        details,
       };
     });
   }, [msgs]);
@@ -322,36 +426,98 @@ export default function Meeting() {
           </span>
         </div>
         <div className="timeline" ref={listRef} aria-live="polite">
-          {msgs.length === 0 && <div className="muted">（ログを待機中… ファイル未生成の可能性）</div>}
-          {msgs.map((m, index) => {
-            const speaker = (m.speaker ?? "unknown").toString().trim() || "unknown";
-            const message = (m.text ?? "").toString();
-            const initial = speaker.charAt(0).toUpperCase() || "?";
-            const bandIndex = (index % 6) + 1;
+          {timelineItems.length === 0 && <div className="muted">（ログを待機中… ファイル未生成の可能性）</div>}
+          {timelineItems.map((item) => {
+            const expanded = expandedId === item.id;
+            const isImageAvatar = typeof item.avatar === "string" && /^(data:|https?:\/\/|\/)/i.test(item.avatar);
+            const avatarContent = typeof item.avatar === "string" && !isImageAvatar && item.avatar.trim().length > 0
+              ? item.avatar.trim()
+              : item.initials;
+            const summaryText = item.snippet && item.snippet.trim().length > 0
+              ? item.snippet
+              : "（本文なし）";
+            const bodyText = item.text && item.text.trim().length > 0
+              ? item.text
+              : "（本文なし）";
             return (
               <article
-                key={m.id}
-                className={`timeline-card timeline-card--accent-${bandIndex}`}
-                data-expanded="true"
-                aria-label={`${speaker} の発言`}
+                key={item.id}
+                className={`timeline-card timeline-card--accent-${item.bandIndex}`}
+                data-expanded={expanded}
+                aria-label={`${item.displayName} の発言`}
+                role="button"
+                tabIndex={0}
+                aria-expanded={expanded}
+                onClick={handleEntryClick(item.id)}
+                onKeyDown={(event) => handleEntryKeyDown(event, item.id)}
+                style={{ "--timeline-accent-bg": item.palette.bg, "--timeline-accent-fg": item.palette.fg }}
               >
                 <div className="timeline-card__band" aria-hidden="true" />
                 <div className="timeline-card__body">
                   <header className="timeline-card__header">
-                    <span className="timeline-card__initial" aria-hidden="true">
-                      {initial}
-                    </span>
+                    {isImageAvatar ? (
+                      <img
+                        src={item.avatar}
+                        alt={`${item.displayName} のアバター`}
+                        className="timeline-card__avatar"
+                      />
+                    ) : (
+                      <span className="timeline-card__initial" aria-hidden="true">
+                        {avatarContent}
+                      </span>
+                    )}
                     <div className="timeline-card__meta">
-                      <span className="timeline-card__speaker speaker">{speaker}</span>
-                      {m.ts && (
-                        <time className="timeline-card__timestamp" dateTime={m.ts}>
-                          {m.ts}
+                      <span className="timeline-card__speaker speaker">{item.displayName}</span>
+                      {item.timestamp && (
+                        <time className="timeline-card__timestamp" dateTime={item.timestamp.iso}>
+                          {item.timestamp.label}
                         </time>
                       )}
                     </div>
                   </header>
+                  {(item.intentLabel || item.progress || item.flowTrendSymbol) && (
+                    <div className="timeline-card__badges">
+                      {item.intentLabel && (
+                        <span
+                          className={`timeline-chip timeline-chip--intent${item.intentKey ? ` timeline-chip--intent-${item.intentKey}` : ""}`}
+                        >
+                          {item.intentLabel}
+                        </span>
+                      )}
+                      {item.progress ? (
+                        <span
+                          className="timeline-chip timeline-chip--progress"
+                          title={item.progress.label}
+                        >
+                          {item.progress.icon}
+                        </span>
+                      ) : item.flowTrendSymbol ? (
+                        <span className="timeline-chip timeline-chip--progress" aria-hidden="true">
+                          {item.flowTrendSymbol}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+                  <div className="timeline-card__summary">
+                    <p className="timeline-card__summary-text text">{summaryText}</p>
+                  </div>
                   <div className="timeline-card__content">
-                    <p className="timeline-card__text text">{message}</p>
+                    <p className="timeline-card__text text">{bodyText}</p>
+                    {item.details.length > 0 && (
+                      <dl className="timeline-card__details">
+                        {item.details.map((detail, detailIndex) => (
+                          <div className="timeline-card__detail" key={`${item.id}-${detail.label}-${detailIndex}`}>
+                            <dt>{detail.label}</dt>
+                            <dd>
+                              <span>{detail.value}</span>
+                              {detail.description && (
+                                <p className="timeline-card__detail-note">{detail.description}</p>
+                              )}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
                   </div>
                 </div>
               </article>
