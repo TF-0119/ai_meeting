@@ -663,7 +663,7 @@ def stop_meeting(mid: str):
     with _processes_lock:
         info = _processes.get(mid)
     if not info:
-        return {"ok": False, "error": "NOT_FOUND"}
+        raise HTTPException(status_code=404, detail="指定された会議が見つかりません。")
 
     pid = info["pid"]
     try:
@@ -672,4 +672,4 @@ def stop_meeting(mid: str):
         os.kill(pid, signal.SIGTERM)
         return {"ok": True, "pid": pid}
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        raise HTTPException(status_code=500, detail=f"会議の停止に失敗しました: {e}") from e
