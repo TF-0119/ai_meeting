@@ -165,7 +165,7 @@ ai_meeting/
 
 ## バックエンドのセットアップ
 ```bash
-pip install pydantic psutil matplotlib pynvml GPUtil requests openai fastapi uvicorn httpx python-dotenv
+pip install pydantic psutil matplotlib pynvml GPUtil requests openai fastapi uvicorn httpx python-dotenv pydantic-settings
 ```
 - `Ollama`／`OpenAI` のどちらかを選択して利用。
 - `uvicorn backend.app:app --reload --port 8000` でFastAPIサーバーを起動。
