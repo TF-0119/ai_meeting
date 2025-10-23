@@ -7,7 +7,7 @@ from backend.settings import settings
 from backend.defaults import DEFAULT_AGENT_STRING, DEFAULT_AGENT_NAMES
 from pathlib import Path
 from typing import Optional, Dict, List, Union, Any, Tuple
-from urllib.parse import urlparse
+from urllib.parse import urlparse, quote
 from uuid import uuid4
 import psutil
 import httpx, sys, os
@@ -48,6 +48,54 @@ async def models():
 # プロセス管理用のレジストリ（メモリ保持）
 _processes_lock = threading.Lock()
 _processes: Dict[str, dict] = {}  # id -> {pid, cmd, outdir, started_at, topic, backend}
+
+
+def _derive_log_id(raw_outdir: Any) -> Optional[str]:
+    """outdir から logs/ 配下の相対パスを抽出し URL 用の文字列へ整形する。"""
+
+    if not raw_outdir:
+        return None
+
+    try:
+        out_path = Path(raw_outdir)
+    except (TypeError, ValueError):
+        return None
+
+    try:
+        logs_root_resolved = LOGS_DIR.resolve()
+    except OSError:
+        logs_root_resolved = LOGS_DIR
+
+    try:
+        out_resolved = out_path.resolve()
+    except OSError:
+        out_resolved = out_path
+
+    relative: Optional[Path] = None
+    for candidate, base in ((out_resolved, logs_root_resolved), (out_path, LOGS_DIR)):
+        try:
+            relative = candidate.relative_to(base)
+        except ValueError:
+            continue
+        else:
+            break
+
+    if relative is None or not relative.parts:
+        fallback = out_path.name or str(out_path).strip()
+        if not fallback or fallback in {".", ".."}:
+            return None
+        return quote(fallback, safe="~@-_.")
+
+    cleaned_parts = []
+    for part in relative.parts:
+        if part in ("", ".", ".."):
+            continue
+        cleaned_parts.append(quote(part, safe="~@-_."))
+
+    if not cleaned_parts:
+        return None
+
+    return "/".join(cleaned_parts)
 
 def _slugify(s: str, max_len: int = 60) -> str:
     """フォルダ名に使えるよう軽くサニタイズ"""
@@ -400,6 +448,7 @@ class StartMeetingOut(BaseModel):
     pid: int
     outdir: str
     cmd: str
+    log_id: Optional[str] = None
 
 @app.post("/meetings", response_model=StartMeetingOut)
 def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
@@ -445,6 +494,8 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
     )
 
     meeting_id = f"{ts}_{proc.pid}"
+    log_id = _derive_log_id(outdir)
+
     with _processes_lock:
         _processes[meeting_id] = {
             "pid": proc.pid,
@@ -453,21 +504,29 @@ def start_meeting(body: StartMeetingIn, bg: BackgroundTasks):
             "started_at": ts,
             "topic": body.topic,
             "backend": selected_backend,
+            "log_id": log_id,
         }
 
     return StartMeetingOut(
         ok=True, id=meeting_id, pid=proc.pid,
         outdir=str(outdir.relative_to(LOGS_DIR.parent)) if str(outdir).startswith(str(LOGS_DIR)) else str(outdir),
-        cmd=cmd_str
+        cmd=cmd_str,
+        log_id=log_id,
     )
 
 # 会議一覧
 @app.get("/meetings")
 def list_meetings():
     with _processes_lock:
-        return {"items": [
-            {"id": k, **v} for k, v in _processes.items()
-        ]}
+        items = []
+        for meeting_id, info in _processes.items():
+            log_id = info.get("log_id") or _derive_log_id(info.get("outdir"))
+            if log_id and info.get("log_id") != log_id:
+                info["log_id"] = log_id
+            entry = {"id": meeting_id, **info}
+            entry["log_id"] = log_id
+            items.append(entry)
+        return {"items": items}
 
 # meeting_result.json の有効性を確認するヘルパー
 def _has_valid_meeting_result(path: Path) -> bool:
@@ -612,6 +671,11 @@ def list_results():
 def meeting_status(mid: str):
     with _processes_lock:
         info = _processes.get(mid)
+        log_id = None
+        if info:
+            log_id = info.get("log_id") or _derive_log_id(info.get("outdir"))
+            if log_id and info.get("log_id") != log_id:
+                info["log_id"] = log_id
     if not info:
         return {"ok": False, "error": "NOT_FOUND"}
 
@@ -630,6 +694,7 @@ def meeting_status(mid: str):
         "pid": info["pid"],
         "is_alive": is_alive,
         "outdir": info["outdir"],
+        "log_id": log_id,
         "topic": info["topic"],
         "backend": info["backend"],
         "has_live": exists_live,

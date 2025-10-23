@@ -79,7 +79,7 @@ export default function Ongoing() {
       const entries = await Promise.all(
         validMeetings.map(async (meeting) => {
           try {
-            const detail = await getMeetingStatusDetail(meeting.id);
+            const detail = await getMeetingStatusDetail(meeting.id, meeting.log_id);
             return [meeting.id, detail];
           } catch (_) {
             return [meeting.id, {
@@ -182,8 +182,11 @@ export default function Ongoing() {
           const summaryTextRaw = typeof status.summary === "string" ? status.summary.trim() : "";
           const summaryText = summaryTextRaw || "サマリーはまだありません。";
           const summaryClassName = `meeting-list__summary${summaryTextRaw ? "" : " meeting-list__summary--empty"}`;
-          const meetingUrl = `/meeting/${encodeURIComponent(meeting.id)}`;
-          const resultUrl = `/result/${encodeURIComponent(meeting.id)}`;
+          const preferredId = typeof meeting.log_id === "string" && meeting.log_id.trim().length > 0
+            ? meeting.log_id.trim()
+            : meeting.id;
+          const meetingUrl = `/meeting/${encodeURIComponent(preferredId)}`;
+          const resultUrl = `/result/${encodeURIComponent(preferredId)}`;
           const isStopping = Boolean(stoppingMap[meeting.id]);
           return (
             <li key={meeting.id} className="meeting-list__item">

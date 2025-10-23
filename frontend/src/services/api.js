@@ -498,14 +498,18 @@ export async function getLiveSnapshot(meetingId) {
 }
 
 // 会議の稼働状況や結果サマリーを手軽に取得するラッパー
-export async function getMeetingStatusDetail(meetingId) {
+export async function getMeetingStatusDetail(meetingId, logId) {
   if (!meetingId) {
     throw new Error("会議IDが指定されていません。");
   }
 
+  const logIdentifier = typeof logId === "string" && logId.trim().length > 0
+    ? logId.trim()
+    : meetingId;
+
   const [statusResult, snapshotResult] = await Promise.allSettled([
     getMeetingStatus(meetingId),
-    getLiveSnapshot(meetingId),
+    getLiveSnapshot(logIdentifier),
   ]);
 
   const status = statusResult.status === "fulfilled" ? statusResult.value : null;
@@ -564,6 +568,9 @@ function normalizeMeetingRecord(source = {}) {
   const topic = typeof source.topic === "string" ? source.topic : "";
   const backend = typeof source.backend === "string" ? source.backend : "";
   const startedAt = typeof source.started_at === "string" ? source.started_at : "";
+  const logIdRaw = typeof source.log_id === "string" ? source.log_id.trim() : "";
+  const logId = logIdRaw.length > 0 ? logIdRaw : null;
+  const outdir = typeof source.outdir === "string" ? source.outdir : "";
   return {
     id,
     topic,
@@ -572,6 +579,8 @@ function normalizeMeetingRecord(source = {}) {
     is_alive: Boolean(source.is_alive),
     has_live: Boolean(source.has_live),
     has_result: Boolean(source.has_result),
+    log_id: logId,
+    outdir,
   };
 }
 
@@ -670,12 +679,17 @@ export async function listMeetings() {
       if (!entry.id) return entry;
       try {
         const status = await getMeetingStatus(entry.id);
+        const statusLogId = typeof status?.log_id === "string" && status.log_id.trim().length > 0
+          ? status.log_id.trim()
+          : null;
         return {
           ...entry,
           ...status,
           started_at: status.started_at || entry.started_at,
           topic: status.topic || entry.topic,
           backend: status.backend || entry.backend,
+          log_id: entry.log_id ?? statusLogId,
+          outdir: typeof status?.outdir === "string" ? status.outdir : entry.outdir,
         };
       } catch {
         return entry;
