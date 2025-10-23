@@ -14,6 +14,7 @@ describe("Ongoing", () => {
     const meetings = [
       {
         id: "20240101-000000_12345",
+        log_id: "20240101-000000_test-topic",
         topic: "テスト会議",
         backend: "ollama",
         started_at: "20240102-030405",
@@ -40,6 +41,7 @@ describe("Ongoing", () => {
 
     expect(listMock).toHaveBeenCalledTimes(1);
     expect(statusMock).toHaveBeenCalledTimes(1);
+    expect(statusMock).toHaveBeenCalledWith("20240101-000000_12345", "20240101-000000_test-topic");
     expect(container.textContent).toContain("テスト会議");
     expect(container.textContent).toContain("2024-01-02 03:04:05");
     expect(container.textContent).toContain("これは最新サマリーです。");
@@ -52,10 +54,10 @@ describe("Ongoing", () => {
     expect(resultBadge).not.toBeNull();
     expect(resultBadge?.textContent).toContain("結果あり");
 
-    const link = container.querySelector('a[href="/meeting/20240101-000000_12345"]');
+    const link = container.querySelector('a[href="/meeting/20240101-000000_test-topic"]');
     expect(link).not.toBeNull();
 
-    const resultLink = container.querySelector('a[href="/result/20240101-000000_12345"]');
+    const resultLink = container.querySelector('a[href="/result/20240101-000000_test-topic"]');
     expect(resultLink).not.toBeNull();
     expect(resultLink?.textContent).toContain("結果を見る");
 
@@ -91,6 +93,9 @@ describe("Ongoing", () => {
     expect(statusMock).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain("部分的な結果");
     expect(container.textContent).toContain("最終出力を生成中です。");
+
+    const fallbackLink = container.querySelector('a[href="/meeting/20240101-000000_67890"]');
+    expect(fallbackLink).not.toBeNull();
 
     const resultBadge = container.querySelector(".meeting-status-badge--pending");
     expect(resultBadge).not.toBeNull();
